@@ -33,7 +33,7 @@ public class ObjectDetector implements AutoCloseable {
 
     public ObjectDetector(@NonNull Context ctx) throws OrtException {
         env = OrtEnvironment.getEnvironment();
-        String modelPath = Util.cacheAsset(ctx, "yolov8s_compatible.onnx");
+        String modelPath = Util.cacheAsset(ctx, "yolov8m_compatible.onnx");
         OrtSession.SessionOptions so = new OrtSession.SessionOptions();
         // Optional: enable NNAPI on supported devices
         // so.addNnapi();  // See ORT NNAPI EP docs

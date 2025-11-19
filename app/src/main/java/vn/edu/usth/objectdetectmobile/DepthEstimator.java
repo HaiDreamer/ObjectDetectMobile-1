@@ -24,7 +24,7 @@ import ai.onnxruntime.OrtSession;
  */
 public class DepthEstimator implements AutoCloseable {
     private static final String TAG = "DepthEstimator";
-    private static final String MODEL_NAME = "depth_anything_v2_vits_fp16.onnx";
+    private static final String MODEL_NAME = "depth_anything_v2_metric_vkitti_vits.onnx";
     private static final boolean LOG_RAW_DEPTH = false;
 
     public static class DepthMap {

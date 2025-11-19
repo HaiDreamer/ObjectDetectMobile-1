@@ -6,10 +6,13 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Size;
+import android.view.View;
 import android.widget.Toast;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
+import androidx.camera.camera2.interop.Camera2CameraInfo;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -32,6 +35,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import ai.onnxruntime.OrtException;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 
 public class MainActivity extends ComponentActivity {
     private static final int REQ = 42;
@@ -50,6 +55,18 @@ public class MainActivity extends ComponentActivity {
     private long lastDepthMillis = 0L;
     private DepthEstimator.DepthMap lastDepthMap = null;
     private long lastDepthCacheTime = 0L;
+    private SwitchMaterial realtimeSwitch;
+    private SwitchMaterial blurSwitch;
+    private SwitchMaterial stereoSwitch;
+    private MaterialButton detectOnceButton;
+    private volatile boolean realtimeEnabled = true;
+    private volatile boolean blurEnabled = ENABLE_INPUT_BLUR;
+    private volatile boolean stereoFusionEnabled = false;
+    private boolean stereoPipelineAvailable = false;
+    private volatile boolean singleShotRequested = false;
+    private volatile boolean singleShotRunning = false;
+    private StereoDepthProcessor stereoProcessor;
+    private boolean stereoSwitchInternalChange = false;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -58,6 +75,61 @@ public class MainActivity extends ComponentActivity {
         previewView = findViewById(R.id.previewView);
         overlay = findViewById(R.id.overlay);
         overlay.setLabels(loadLabels());
+        realtimeSwitch = findViewById(R.id.switchRealtime);
+        blurSwitch = findViewById(R.id.switchBlur);
+        stereoSwitch = findViewById(R.id.switchStereo);
+        detectOnceButton = findViewById(R.id.buttonDetectOnce);
+
+        if (realtimeSwitch != null) {
+            realtimeSwitch.setChecked(true);
+            realtimeSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                realtimeEnabled = isChecked;
+                if (detectOnceButton != null) {
+                    detectOnceButton.setVisibility(isChecked ? View.GONE : View.VISIBLE);
+                    detectOnceButton.setEnabled(true);
+                }
+                if (isChecked) {
+                    singleShotRequested = false;
+                }
+            });
+        }
+
+        if (detectOnceButton != null) {
+            detectOnceButton.setVisibility(View.GONE);
+            detectOnceButton.setOnClickListener(v -> {
+                if (singleShotRunning) {
+                    return;
+                }
+                singleShotRequested = true;
+                detectOnceButton.setEnabled(false);
+            });
+        }
+
+        if (blurSwitch != null) {
+            blurSwitch.setChecked(ENABLE_INPUT_BLUR);
+            blurSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> blurEnabled = isChecked);
+        }
+
+        if (stereoSwitch != null) {
+            stereoSwitch.setEnabled(false);
+            stereoSwitch.setText(R.string.stereo_toggle_disabled_hint);
+            stereoSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (stereoSwitchInternalChange) {
+                    return;
+                }
+                if (!stereoPipelineAvailable) {
+                    if (isChecked) {
+                        Toast.makeText(this, R.string.stereo_toggle_disabled_hint, Toast.LENGTH_SHORT).show();
+                    }
+                    stereoSwitchInternalChange = true;
+                    buttonView.setChecked(false);
+                    stereoSwitchInternalChange = false;
+                    stereoFusionEnabled = false;
+                    return;
+                }
+                stereoFusionEnabled = isChecked;
+            });
+        }
 
         exec = Executors.newSingleThreadExecutor();
 
@@ -85,13 +157,14 @@ public class MainActivity extends ComponentActivity {
             depthEstimator = null;
             lastDepthMap = null;
         }
+        stereoProcessor = null;
+        updateStereoSwitchAvailability(false);
 
         ProcessCameraProvider.getInstance(this).addListener(() -> {
             try {
                 ProcessCameraProvider provider = ProcessCameraProvider.getInstance(this).get();
                 provider.unbindAll();
 
-                // Build Preview with ResolutionSelector (non-deprecated)
                 Preview preview =
                         new Preview.Builder()
                                 .setResolutionSelector(
@@ -104,7 +177,6 @@ public class MainActivity extends ComponentActivity {
                                 .build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-                // Build ImageAnalysis with ResolutionSelector (prefer ~640 square input, but let CameraX choose closest)
                 ImageAnalysis analysis =
                         new ImageAnalysis.Builder()
                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -124,7 +196,22 @@ public class MainActivity extends ComponentActivity {
                                 .build();
 
                 analysis.setAnalyzer(exec, image -> {
+                    boolean singleShotFrame = false;
                     try {
+                        boolean shouldProcess = realtimeEnabled;
+                        if (!shouldProcess) {
+                            if (singleShotRequested && !singleShotRunning) {
+                                singleShotRequested = false;
+                                singleShotRunning = true;
+                                singleShotFrame = true;
+                                shouldProcess = true;
+                            }
+                        }
+
+                        if (!shouldProcess) {
+                            return;
+                        }
+
                         int frameW = image.getWidth();
                         int frameH = image.getHeight();
                         int rotation = image.getImageInfo().getRotationDegrees();
@@ -138,15 +225,19 @@ public class MainActivity extends ComponentActivity {
                             }
                         }
 
+                        if (stereoProcessor != null) {
+                            stereoProcessor.setReferenceSize(frameW, frameH);
+                        }
+
                         int[] detectorInput = argb;
-                        if (ENABLE_INPUT_BLUR && BLUR_RADIUS > 0) {
+                        if (blurEnabled && BLUR_RADIUS > 0) {
                             detectorInput = boxBlur(argb, frameW, frameH, BLUR_RADIUS);
                         }
 
-                        // Run detection and depth off the UI thread
                         List<ObjectDetector.Detection> dets =
                                 detector.detect(detectorInput, frameW, frameH);
 
+                        DepthEstimator.DepthMap depthForFusion = null;
                         if (depthEstimator != null) {
                             long now = SystemClock.elapsedRealtime();
                             boolean shouldRunDepth = now - lastDepthMillis >= DEPTH_INTERVAL_MS;
@@ -157,6 +248,7 @@ public class MainActivity extends ComponentActivity {
                                     lastDepthMillis = SystemClock.elapsedRealtime();
                                     lastDepthMap = depth;
                                     lastDepthCacheTime = lastDepthMillis;
+                                    depthForFusion = depth;
                                 } catch (Throwable depthErr) {
                                     Log.w(TAG, "Depth inference disabled due to error", depthErr);
                                     try {
@@ -167,7 +259,13 @@ public class MainActivity extends ComponentActivity {
                                 }
                             } else if (lastDepthMap != null && now - lastDepthCacheTime <= DEPTH_CACHE_MS) {
                                 dets = depthEstimator.attachDepth(dets, lastDepthMap);
+                                depthForFusion = lastDepthMap;
                             }
+                        }
+
+                        if (stereoFusionEnabled && stereoProcessor != null
+                                && depthForFusion != null && dets != null) {
+                            dets = stereoProcessor.fuseDepth(depthForFusion, dets, frameW, frameH);
                         }
 
                         // Draw on overlay on UI thread
@@ -182,6 +280,14 @@ public class MainActivity extends ComponentActivity {
                     } finally {
                         // ALWAYS close frame or pipeline can stall/crash
                         image.close();
+                        if (singleShotFrame) {
+                            singleShotRunning = false;
+                            runOnUiThread(() -> {
+                                if (detectOnceButton != null) {
+                                    detectOnceButton.setEnabled(true);
+                                }
+                            });
+                        }
                     }
                 });
 
@@ -189,12 +295,39 @@ public class MainActivity extends ComponentActivity {
                         .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                         .build();
 
-                provider.bindToLifecycle(this, selector, preview, analysis);
+                Camera camera = provider.bindToLifecycle(this, selector, preview, analysis);
+                try {
+                    stereoProcessor = new StereoDepthProcessor(this,
+                            Camera2CameraInfo.extractCameraCharacteristics(camera.getCameraInfo()));
+                    updateStereoSwitchAvailability(true);
+                } catch (Throwable processorErr) {
+                    Log.w(TAG, "Stereo processor init failed", processorErr);
+                    stereoProcessor = null;
+                    updateStereoSwitchAvailability(false);
+                }
             } catch (Throwable e) {
                 Log.e(TAG, "Camera bind error", e);
                 Toast.makeText(this, "Camera error: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void updateStereoSwitchAvailability(boolean available) {
+        stereoPipelineAvailable = available;
+        if (stereoSwitch == null) return;
+        runOnUiThread(() -> {
+            stereoSwitchInternalChange = true;
+            if (!available) {
+                stereoSwitch.setChecked(false);
+                stereoSwitch.setEnabled(false);
+                stereoSwitch.setText(R.string.stereo_toggle_disabled_hint);
+                stereoFusionEnabled = false;
+            } else {
+                stereoSwitch.setText(R.string.stereo_toggle);
+                stereoSwitch.setEnabled(true);
+            }
+            stereoSwitchInternalChange = false;
+        });
     }
 
     private String[] loadLabels() {
@@ -233,6 +366,7 @@ public class MainActivity extends ComponentActivity {
                 throw new RuntimeException(e);
             }
         }
+        stereoProcessor = null;
         lastDepthMap = null;
     }
 
