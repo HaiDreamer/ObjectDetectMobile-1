@@ -49,4 +49,17 @@
     <string name="blur_toggle">Blur input</string>
     <string name="stereo_toggle">Stereo fusion</string>
     <string name="stereo_toggle_disabled_hint">Dual depth unavailable</string>
+    <string name="settings_show">Settings</string>
+    <string name="settings_hide">Hide settings</string>
+    <string name="depth_calibration_title">Distance calibration</string>
+    <string name="depth_calibration_value">Scale x%1$.2f</string>
+    <string name="depth_calibration_default">Scale x1.00</string>
+    <string name="depth_calibration_hint">Drag the slider if measured distance looks too far/too close. Saved per device and aperture.</string>
+    <string name="depth_mode_mono">Depth: Mono</string>
+    <string name="depth_mode_stereo">Depth: Stereo</string>
+    <string name="sequential_dual_shot">Ch\u1ee5p l\u1ea7n l\u01b0\u1ee3t 2 camera (fallback stereo)</string>
+    <string name="zoom_title">Zoom</string>
+    <string name="zoom_value">Zoom x%1$.2f</string>
+    <string name="zoom_value_default">Zoom x1.00</string>
+    <string name="dual_shot">Dual shot</string>
 </resources>

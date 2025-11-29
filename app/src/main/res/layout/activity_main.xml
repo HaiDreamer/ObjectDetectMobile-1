@@ -17,17 +17,52 @@
         android:layout_height="match_parent"
         android:clickable="false"/>
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonToggleSettings"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:padding="12dp"
+        android:text=""
+        android:minWidth="48dp"
+        android:minHeight="48dp"
+        app:icon="@android:drawable/ic_menu_manage"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonFlipCamera"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:padding="12dp"
+        android:text=""
+        android:minWidth="48dp"
+        android:minHeight="48dp"
+        app:icon="@android:drawable/ic_menu_rotate"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <LinearLayout
         android:id="@+id/controlPanel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="16dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:padding="12dp"
         android:background="#66000000"
         android:elevation="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/buttonToggleSettings"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
@@ -39,11 +74,20 @@
             android:textColor="@android:color/white"
             android:checked="true" />
 
+        <TextView
+            android:id="@+id/textDepthMode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/depth_mode_mono"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switchBlur"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
             android:text="@string/blur_toggle"
             android:textColor="@android:color/white"
             android:checked="true" />
@@ -52,20 +96,106 @@
             android:id="@+id/switchStereo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
             android:text="@string/stereo_toggle"
             android:textColor="@android:color/white"
             android:checked="false" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonDetectOnce"
-            style="?attr/materialButtonOutlinedStyle"
+        <TextView
+            android:id="@+id/textCalibrationTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="@string/single_detect"
-            android:visibility="gone" />
+            android:layout_marginTop="12dp"
+            android:text="@string/depth_calibration_title"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textCalibrationValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@android:color/white"
+            android:text="@string/depth_calibration_default" />
+
+        <SeekBar
+            android:id="@+id/seekCalibration"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:max="200"
+            android:progress="50" />
+
+        <TextView
+            android:id="@+id/textCalibrationHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/depth_calibration_hint"
+            android:textColor="@android:color/white" />
 
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/zoomPanel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="12dp"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:background="#66000000"
+        android:elevation="8dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:id="@+id/textZoomTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/zoom_title"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textZoomValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@android:color/white"
+            android:text="@string/zoom_value_default" />
+
+        <SeekBar
+            android:id="@+id/seekZoom"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:max="1000"
+            android:progress="0" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonDetectOnce"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="@string/single_detect"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonDualShot"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:layout_marginStart="12dp"
+        android:text="@string/dual_shot"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toEndOf="@id/buttonDetectOnce" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

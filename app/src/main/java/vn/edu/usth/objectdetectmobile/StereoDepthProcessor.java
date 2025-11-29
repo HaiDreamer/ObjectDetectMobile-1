@@ -23,6 +23,7 @@ public class StereoDepthProcessor {
     private static final float DEFAULT_BASELINE_METERS = 0.06f;
     private static final float DISPARITY_EPS = 1e-4f;
     private static final float STEREO_WEIGHT = 0.65f;
+    private static final float MAX_STEREO_DEVIATION = 2.5f; // fallback to mono if stereo vs mono differs too much
     private static final float NEAR_METERS = 0.2f;
     private static final float FAR_METERS = 5.0f;
 
@@ -60,6 +61,7 @@ public class StereoDepthProcessor {
         for (ObjectDetector.Detection d : dets) {
             float raw = sampleRawDepth(depthMap, d);
             float stereoDepth = convertRawToStereoDepth(raw, depthMap);
+            stereoDepth = DepthEstimator.applyCalibration(stereoDepth);
             float fused = fuseDepthValues(d.depth, stereoDepth);
             out.add(d.withDepth(fused));
         }
@@ -117,6 +119,13 @@ public class StereoDepthProcessor {
         }
         if (!hasStereo) return modelDepthCm;
         if (!hasModel) return stereoDepthCm;
+        float ratio = stereoDepthCm > modelDepthCm
+                ? stereoDepthCm / Math.max(modelDepthCm, 1e-3f)
+                : modelDepthCm / Math.max(stereoDepthCm, 1e-3f);
+        if (ratio > MAX_STEREO_DEVIATION) {
+            // Stereo estimate too far off; keep model depth to avoid wild jumps.
+            return modelDepthCm;
+        }
         float modelMeters = Math.max(modelDepthCm / 100f, 1e-3f);
         float stereoMeters = Math.max(stereoDepthCm / 100f, 1e-3f);
         float disparityModel = (focalLengthPixels * baselineMeters) / modelMeters;

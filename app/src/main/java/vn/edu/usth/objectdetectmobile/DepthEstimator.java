@@ -24,8 +24,8 @@ import ai.onnxruntime.OrtSession;
  */
 public class DepthEstimator implements AutoCloseable {
     private static final String TAG = "DepthEstimator";
-    private static final String MODEL_NAME = "depth_anything_v2_metric_vkitti_vits.onnx";
-    private static final boolean LOG_RAW_DEPTH = false;
+    private static final String MODEL_NAME = "depth_anything_v2_metric_hypersim_vits.onnx";
+    private static final boolean LOG_RAW_DEPTH = true;
 
     public static class DepthMap {
         public final float[] depth;
@@ -41,32 +41,40 @@ public class DepthEstimator implements AutoCloseable {
         }
     }
 
-    private static final float NEAR_CM = 20f;  // khoảng cách thật tương ứng với raw gần
-    private static final float FAR_CM = 200f;  // khoảng cách thật tương ứng với raw xa
+    private static final float NEAR_CM = 20f;  // clamp for extreme near noise
+    private static final float FAR_CM = 200f;  // clamp for extreme far noise
+    private static final float BASE_SCALE = 0.33f;
+    private static final float MIN_USER_SCALE = 0.25f;
+    private static final float MAX_USER_SCALE = 4f;
+    private static volatile float userScale = 1f;
 
     // Các giá trị raw trung bình bạn đo được (ví dụ giữ vật thể ở 30cm và 200cm, log raw rồi sửa ở đây)
-    private static final float CAL_RAW_NEAR = 3.22f;
-    private static final float CAL_RAW_FAR = 1.232f;
 
-    private static final float[] CAL_CM  = {20f, 40f, 50f, 75f, 100f, 150f, 200f, 300f, 400f, 500f};
-    private static final float[] CAL_RAW = {3.22f, 2.32f, 1.95f, 1.72f, 1.59f, 1.49f, 1.232f, 1.0f, 0.7f, 0.3f};
+    // private static final float[] CAL_CM  = {20f, 40f, 50f, 75f, 100f, 150f, 200f, 300f, 400f, 500f};
+    // private static final float[] CAL_RAW = {3.22f, 2.32f, 1.95f, 1.72f, 1.59f, 1.49f, 1.232f, 1.0f, 0.7f, 0.3f};
 
+    // Depth Anything v2 metric outputs depth in meters; convert directly to centimeters.
     private static float rawToCentimeters(float raw) {
-    if (Float.isNaN(raw) || CAL_CM.length < 2) return Float.NaN;
-
-    if (raw >= CAL_RAW[0]) return CAL_CM[0];
-    if (raw <= CAL_RAW[CAL_RAW.length - 1]) return CAL_CM[CAL_CM.length - 1];
-
-    for (int i = 0; i < CAL_RAW.length - 1; i++) {
-        float r0 = CAL_RAW[i];
-        float r1 = CAL_RAW[i + 1];
-        if (raw <= r0 && raw >= r1) {
-            float t = (raw - r0) / (r1 - r0);
-            return CAL_CM[i] + t * (CAL_CM[i + 1] - CAL_CM[i]);
-        }
+        if (Float.isNaN(raw)) return Float.NaN;
+        float cm = raw * 100f * BASE_SCALE;
+        cm = applyCalibration(cm);
+        // Optional clamp to avoid extreme outliers from propagating.
+        return Math.max(0f, Math.min(cm, 2000f));
     }
-    return CAL_CM[CAL_CM.length - 1];
-}
+
+    public static void setUserScale(float scale) {
+        float clamped = Math.max(MIN_USER_SCALE, Math.min(MAX_USER_SCALE, scale));
+        userScale = clamped;
+    }
+
+    public static float getUserScale() {
+        return userScale;
+    }
+
+    public static float applyCalibration(float depthCm) {
+        if (Float.isNaN(depthCm)) return depthCm;
+        return depthCm * userScale;
+    }
 
 
     private final OrtEnvironment env;
@@ -286,3 +294,4 @@ public class DepthEstimator implements AutoCloseable {
         env.close();
     }
 }
+
