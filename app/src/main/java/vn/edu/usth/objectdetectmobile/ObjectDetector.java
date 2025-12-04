@@ -168,7 +168,9 @@ public class ObjectDetector implements AutoCloseable {
         return keep;
     }
 
-    @Override public void close() throws Exception { session.close(); env.close(); }
+    @Override public void close() throws Exception {
+        session.close();
+    }
 
     // Utility to read asset fully
     static class Util {

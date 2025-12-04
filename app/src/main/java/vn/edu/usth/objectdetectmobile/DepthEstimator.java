@@ -291,7 +291,6 @@ public class DepthEstimator implements AutoCloseable {
     @Override
     public void close() throws Exception {
         sessionOptions.close();
-        env.close();
     }
 }
 
