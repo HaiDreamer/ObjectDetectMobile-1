@@ -23,7 +23,7 @@ import ai.onnxruntime.OrtSession;
  */
 public class DepthEstimator implements AutoCloseable {
     private static final String TAG = "DepthEstimator";
-    private static final String MODEL_NAME = "depth_anything_v2_metric_hypersim_vits.onnx";
+    private static final String MODEL_NAME = "depth_anything_v2_metric_hypersim_vits_fp16.onnx";
     private static final boolean LOG_RAW_DEPTH = true;
 
     public static class DepthMap {
@@ -47,10 +47,10 @@ public class DepthEstimator implements AutoCloseable {
     private static final float MAX_USER_SCALE = 4f;
     private static volatile float userScale = 1f;
 
-    // NEW: fraction of bbox used for "danger region" (same idea as Python's frac)
-    private static final float DANGER_REGION_FRAC = 0.3f;
+    // fraction of bbox used for "danger region"
+    private static final float DANGER_REGION_FRAC = 0.2f;
 
-    // NEW: region mode, mirroring Python's "center" / "bottom"
+    // region mode, mirroring Python's "center" / "bottom"
     private enum DangerRegionMode { CENTER, BOTTOM }
 
     // Depth Anything v2 metric outputs depth in meters; convert directly to centimeters.
@@ -96,7 +96,7 @@ public class DepthEstimator implements AutoCloseable {
         if (dets == null || depthMap == null) return dets;
         List<ObjectDetector.Detection> enriched = new ArrayList<>(dets.size());
         for (ObjectDetector.Detection d : dets) {
-            enriched.add(d.withDepth(averageDepth(depthMap, d)));
+            enriched.add(d.withDepth(minDepth(depthMap, d)));
         }
         return enriched;
     }
@@ -149,7 +149,7 @@ public class DepthEstimator implements AutoCloseable {
         }
     }
 
-    // NEW: port of Python _compute_box_distance, but returns raw depth (model units).
+    // returns raw depth (model units).
     private static float sampleDangerRegionRaw(DepthMap map, ObjectDetector.Detection d, float frac, DangerRegionMode mode) {
         if (map.width == 0 || map.height == 0) return Float.NaN;
 
@@ -235,21 +235,23 @@ public class DepthEstimator implements AutoCloseable {
 
         if (n == 0) return Float.NaN;
 
-        // Median of vals[0..n)
-        java.util.Arrays.sort(vals, 0, n);
-        float median;
-        if ((n & 1) == 1) {
-            median = vals[n / 2];
-        } else {
-            int i = n / 2;
-            median = (vals[i - 1] + vals[i]) * 0.5f;
+        // Nearest point (minimum positive depth) in vals[0..n)
+        float nearest = Float.MAX_VALUE;
+        for (int i = 0; i < n; i++) {
+            float v = vals[i];
+            if (v > 0f && v < nearest) {
+                nearest = v;
+            }
         }
 
-        return median;
+        if (nearest == Float.MAX_VALUE) {
+            return Float.NaN;
+        }
+
+        return nearest;
     }
 
-    // CHANGED: use danger-region + median instead of full-box average
-    private static float averageDepth(DepthMap map, ObjectDetector.Detection d) {
+    private static float minDepth(DepthMap map, ObjectDetector.Detection d) {
         if (map == null || map.width == 0 || map.height == 0) return Float.NaN;
 
         // Decide region mode based on class
@@ -257,7 +259,6 @@ public class DepthEstimator implements AutoCloseable {
                 ? DangerRegionMode.BOTTOM
                 : DangerRegionMode.CENTER;
 
-        // Same frac as your Python call (0.3)
         float raw = sampleDangerRegionRaw(map, d, DANGER_REGION_FRAC, mode);
 
         if (Float.isNaN(raw)) return Float.NaN;
