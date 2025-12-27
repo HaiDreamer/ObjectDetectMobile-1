@@ -26,6 +26,18 @@
             android:exported="false"
             android:theme="@style/Theme.ObjectDetectMobile" />
         <activity
+            android:name=".ModelPackage"
+            android:exported="false"
+            android:theme="@style/Theme.ObjectDetectMobile" />
+        <activity
+            android:name=".Instruction"
+            android:exported="false"
+            android:theme="@style/Theme.ObjectDetectMobile" />
+        <activity
+            android:name=".DepthEstimation"
+            android:exported="false"
+            android:theme="@style/Theme.ObjectDetectMobile" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.ObjectDetectMobile">

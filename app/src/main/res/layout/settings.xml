@@ -15,7 +15,7 @@
             android:textSize="45sp"
             android:textStyle="bold"
             app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginTop="35dp"
+            android:layout_marginTop="35dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintHorizontal_bias="0.5"/>
@@ -29,7 +29,7 @@
             android:contentDescription="back_button"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginTop="40dp"
+            android:layout_marginTop="40dp"
             android:layout_marginStart="20dp"/>
 
     <ImageView
@@ -37,10 +37,10 @@
         android:layout_width="150dp"
         android:layout_height="250dp"
         android:src="@drawable/ic_logotrans"
-    android:contentDescription="settings_image"
-    app:layout_constraintTop_toBottomOf="@id/titleSettings"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintEnd_toEndOf="parent"/>
+        android:contentDescription="settings_image"
+        app:layout_constraintTop_toBottomOf="@id/titleSettings"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
 
     <androidx.cardview.widget.CardView
         android:id="@+id/DepthEstimation"
@@ -285,8 +285,8 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
-                android:thumbTint="@color/switch_thumb_color"
-                android:trackTint="@color/switch_track_color"/>
+                android:thumbTint="@color/switch_thumb1"
+                android:trackTint="@color/switch_track1"/>
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </androidx.cardview.widget.CardView>

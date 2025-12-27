@@ -1,21 +1,15 @@
 package vn.edu.usth.objectdetectmobile;
 
-import android.app.AlertDialog;
-import android.app.DownloadManager;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Bundle;
-import android.os.Environment;
 import android.widget.ImageButton;
-import android.widget.TextView;
 import android.widget.Toast;
+import android.content.Intent;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
-
-import java.io.File;
 
 import vn.edu.usth.objectdetectmobile.MainActivity.EnvMode;
 
@@ -52,11 +46,32 @@ public class Settings extends AppCompatActivity {
 
         buttonBack.setOnClickListener(v -> finish());
 
+        if (packageCard != null) {
+            packageCard.setOnClickListener(v -> {
+                Intent intent = new Intent(Settings.this, ModelPackage.class);
+                startActivity(intent);
+            });
+        }
+
+        if (instructionCard != null) {
+            instructionCard.setOnClickListener(v -> {
+                Intent intent = new Intent(Settings.this, Instruction.class);
+                startActivity(intent);
+            });
+        }
+
+        if (depthCard != null) {
+            depthCard.setOnClickListener(v -> {
+                Intent intent = new Intent(Settings.this, DepthEstimation.class);
+                startActivity(intent);
+            });
+        }
+
         switchBlur.setOnCheckedChangeListener((buttonView, isChecked) -> {
             Toast.makeText(this, isChecked ? "Blur Input ON" : "Blur Input OFF", Toast.LENGTH_SHORT).show();
         });
-        switchBlur.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb_color));
-        switchBlur.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track_color));
+        switchBlur.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
+        switchBlur.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
 
         if (blurCard != null) {
             blurCard.setOnClickListener(v -> {
@@ -65,6 +80,7 @@ public class Settings extends AppCompatActivity {
                 }
             });
         }
+        /*
         if (depthCard != null) {
             depthCard.setOnClickListener(v -> showEnvChoiceDialog());
         }
@@ -210,6 +226,6 @@ public class Settings extends AppCompatActivity {
 
         File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (dir == null) return null;
-        return new File(dir, fileName);
+        return new File(dir, fileName);*/
     }
 }

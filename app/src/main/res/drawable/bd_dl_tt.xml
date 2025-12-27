@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+
+    <!-- Viền trên (đỏ) -->
+    <item>
+        <shape>
+            <solid android:color="#73C15F"/>
+            <corners android:radius="16dp"/>
+        </shape>
+    </item>
+
+
+    <!-- Viền trái (xanh) -->
+    <item
+        android:top="10dp">
+        <shape>
+            <solid android:color="#73C15F"/>
+            <corners android:radius="16dp"/>
+        </shape>
+    </item>
+
+
+    <!-- Nền -->
+    <item
+        android:bottom="6dp"
+        android:left="6dp">
+        <shape>
+            <solid android:color="#C2FFB5"/>
+            <corners android:radius="14dp"/>
+        </shape>
+    </item>
+
+
+</layer-list>
