@@ -41,6 +41,7 @@ import vn.edu.usth.objectdetectmobile.utils.TTSWarning;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -75,25 +76,13 @@ public class MainActivity extends ComponentActivity {
         INDOOR,
         OUTDOOR
     }
-    // -----------------------------------------------------------------------------------------
-    //  Model download URLs (GitHub Pages)
-    // -----------------------------------------------------------------------------------------
-    // Base folder chứa 2 model indoor/outdoor
-    private static final String DEPTH_DOWNLOAD_INDOOR_URL =
-            "https://haidreamer.github.io/models_mobile_app_gp_for_visually_impaired/depth_anything_v2_metric_hypersim_vits_fp16.onnx";
-
-    private static final String DEPTH_DOWNLOAD_OUTDOOR_URL =
-            "https://haidreamer.github.io/models_mobile_app_gp_for_visually_impaired/depth_anything_v2_metric_vkitti_vits_fp16.onnx";
-
-    // Lưu thông tin tải depth model
-    private static final String PREF_DEPTH_MODEL_INDOOR_PATH  = "pref_depth_model_indoor_path";
-    private static final String PREF_DEPTH_MODEL_OUTDOOR_PATH = "pref_depth_model_outdoor_path";
-    private static final String PREF_LAST_DEPTH_DOWNLOAD_ID   = "pref_last_depth_download_id";
-    private static final String PREF_LAST_DEPTH_DOWNLOAD_MODE = "pref_last_depth_download_mode";
     // Depth model prefs live in a separate file
     private static final String DEPTH_MODEL_PREFS = "depth_models";
     private SharedPreferences depthModelPrefs;
     private static final String PREF_ENV_MODE = "pref_env_mode";
+    private static final String PREF_BLUR_ENABLED = "pref_blur_enabled";
+    private static final String PREF_DEPTH_MODE = "pref_depth_mode"; // MONO or STEREO
+
     private EnvMode envMode = EnvMode.INDOOR;  // default = Indoor
     private SwitchMaterial environmentSwitch;
     // ---------------------------------------------------------------------------------------------
@@ -202,23 +191,6 @@ public class MainActivity extends ComponentActivity {
         initViews();
         initPreferencesAndCalibrationKey();
 
-        // Đăng ký broadcast receiver cho download complete
-        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+ (API 33+) yêu cầu flag RECEIVER_NOT_EXPORTED
-                registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Android 8+ (API 26+) cũng hỗ trợ flag
-                registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            } else {
-                // Android 7 trở xuống
-                registerReceiver(downloadReceiver, filter);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to register receiver", e);
-        }
-
         initControls();
 
         // camera permission
@@ -229,6 +201,9 @@ public class MainActivity extends ComponentActivity {
         } else {
             startPipelines();
         }
+
+        // Lắng nghe thay đổi từ Settings/DepthEstimation
+        prefs.registerOnSharedPreferenceChangeListener(prefListener);
     }
 
     // react to user choice permission
@@ -259,9 +234,7 @@ public class MainActivity extends ComponentActivity {
                 Log.e(TAG, "DepthEstimator close failed", e);
             }
         }
-        try {
-            unregisterReceiver(downloadReceiver);
-        } catch (Exception ignore) {}
+        if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(prefListener);
         stereoProcessor = null;
         // Clear depth cache state
         depthState.lastDepthMap = null;
@@ -271,6 +244,40 @@ public class MainActivity extends ComponentActivity {
             tts.shutdown();
         }
     }
+
+    // Listener để reload khi Settings thay đổi
+    private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sharedPreferences, key) -> {
+        if (PREF_ENV_MODE.equals(key)) {
+            String modeName = sharedPreferences.getString(key, EnvMode.INDOOR.name());
+            EnvMode newMode = EnvMode.valueOf(modeName);
+            if (newMode != envMode) {
+                envMode = newMode;
+                runOnUiThread(() -> {
+                    if (environmentSwitch != null) environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
+                    reloadPipelinesForEnvChange();
+                    updateDepthModeLabel();
+                });
+            }
+        } else if (PREF_BLUR_ENABLED.equals(key)) {
+            blurEnabled = sharedPreferences.getBoolean(key, ENABLE_INPUT_BLUR);
+            runOnUiThread(() -> {
+                if (blurSwitch != null) blurSwitch.setChecked(blurEnabled);
+                updateDepthModeLabel();
+            });
+        } else if (PREF_DEPTH_MODE.equals(key)) {
+            String mode = sharedPreferences.getString(key, "MONO");
+            boolean isStereo = "STEREO".equals(mode);
+            // Chỉ cho phép bật stereo nếu phần cứng hỗ trợ
+            if (isStereo && !stereoPipelineAvailable) {
+                isStereo = false; // Fallback
+            }
+            stereoFusionEnabled = isStereo;
+            runOnUiThread(() -> {
+                if (stereoSwitch != null) stereoSwitch.setChecked(stereoFusionEnabled);
+                updateDepthModeLabel();
+            });
+        }
+    };
 
     // ---------------------------------------------------------------------------------------------
     //  UI init & listeners
@@ -320,6 +327,9 @@ public class MainActivity extends ComponentActivity {
         if (environmentSwitch != null) {
             environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
         }
+
+        // Sync Blur
+        blurEnabled = prefs.getBoolean(PREF_BLUR_ENABLED, ENABLE_INPUT_BLUR);
     }
 
 
@@ -340,6 +350,8 @@ public class MainActivity extends ComponentActivity {
         if (settingsButton == null) return;
         settingsButton.setOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, Settings.class);
+            // Truyền khả năng hỗ trợ Stereo sang Settings để Settings truyền tiếp cho DepthEstimation
+            intent.putExtra("STEREO_AVAILABLE", stereoPipelineAvailable);
             startActivity(intent);
         });
     }
@@ -347,6 +359,10 @@ public class MainActivity extends ComponentActivity {
     private void initRealtimeSwitch() {
         if (realtimeSwitch == null) return;
         realtimeSwitch.setChecked(true);
+
+        realtimeSwitch.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
+        realtimeSwitch.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
+
         realtimeSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
             realtimeEnabled = isChecked;
             if (detectOnceButton != null) {
@@ -371,59 +387,22 @@ public class MainActivity extends ComponentActivity {
 
     private void initBlurSwitch() {
         if (blurSwitch == null) return;
-        blurSwitch.setChecked(ENABLE_INPUT_BLUR);
-        blurSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> blurEnabled = isChecked);
+        // Ẩn Blur switch khỏi Quick Settings theo yêu cầu
+        blurSwitch.setVisibility(View.GONE);
     }
 
     private void initStereoSwitch() {
         if (stereoSwitch == null) return;
-        stereoSwitch.setEnabled(false);
-        stereoSwitch.setText(R.string.stereo_toggle_disabled_hint);
-        stereoSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (stereoSwitchInternalChange) return;
-            if (!stereoPipelineAvailable) {
-                if (isChecked) {
-                    Toast.makeText(this, R.string.stereo_toggle_disabled_hint,
-                            Toast.LENGTH_SHORT).show();
-                }
-                stereoSwitchInternalChange = true;
-                buttonView.setChecked(false);
-                stereoSwitchInternalChange = false;
-                stereoFusionEnabled = false;
-                updateDepthModeLabel();
-                return;
-            }
-            stereoFusionEnabled = isChecked;
-            updateDepthModeLabel();
-        });
+        // Ẩn Stereo switch, chỉ hiển thị trạng thái qua text
+        stereoSwitch.setVisibility(View.GONE);
     }
 
     private void initEnvironmentSwitch() {
-        // If the app itself changed the switch state (via setChecked()), set flag to avoid triggering the logic again
         if (environmentSwitch == null) return;
-
-        // Sync lại trạng thái hiện tại
+        // Ẩn Environment switch, chỉ hiển thị trạng thái qua text
+        environmentSwitch.setVisibility(View.GONE);
+        // Vẫn sync trạng thái checked để logic nội bộ (nếu có dùng) không bị sai
         environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
-
-        environmentSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (envSwitchInternalChange) return;
-
-            // User is trying to switch to this mode
-            EnvMode targetMode = isChecked ? EnvMode.OUTDOOR : EnvMode.INDOOR;
-
-            // Nếu chưa có model cho mode này thì không cho switch, gợi ý download
-            if (!DepthEstimator.isModelAvailable(this, targetMode)) {
-                envSwitchInternalChange = true;
-                buttonView.setChecked(!isChecked);  // revert về mode cũ
-                envSwitchInternalChange = false;
-
-                showMissingDepthModelDialog(targetMode);
-                return;
-            }
-
-            // Model đã có -> switch thật sự
-            switchEnvironment(targetMode);
-        });
     }
 
     private void switchEnvironment(EnvMode newMode) {
@@ -593,166 +572,18 @@ public class MainActivity extends ComponentActivity {
     private void showMissingDepthModelDialog(EnvMode targetMode) {
         String modeLabel = (targetMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
 
-        String downloadUrl = (targetMode == EnvMode.OUTDOOR)
-                ? DEPTH_DOWNLOAD_OUTDOOR_URL
-                : DEPTH_DOWNLOAD_INDOOR_URL;
-
         new AlertDialog.Builder(this)
                 .setTitle("Depth model missing")
                 .setMessage(
                         "Depth model for " + modeLabel + " mode is not available inside the app.\n\n" +
-                                "Do you want to download it now?"
+                                "Please go to Settings > Model Package to download it."
                 )
-                .setPositiveButton("Download", (dialog, which) -> {
-                    startDepthModelDownload(downloadUrl, targetMode);
-                })
-                .setNegativeButton("Cancel", (dialog, which) -> {
-                    Toast.makeText(this,
-                            "Running without depth estimation",
-                            Toast.LENGTH_SHORT).show();
-                })
+                .setPositiveButton("OK", null)
                 .setCancelable(true)
                 .show();
     }
 
 
-    private void startDepthModelDownload(String url, EnvMode mode) {
-        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-        if (dm == null) {
-            Toast.makeText(this, "DownloadManager not available", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        java.io.File outFile = getDepthModelFileForMode(mode);
-        if (outFile == null) {
-            Toast.makeText(this, "No external files dir for downloads", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        String fileName = outFile.getName();
-
-        DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url))
-                .setTitle("Downloading " + fileName)
-                .setDescription("Depth model for " + (mode == EnvMode.OUTDOOR ? "Outdoor" : "Indoor"))
-                .setNotificationVisibility(
-                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // We know exactly where the file will be:
-                .setDestinationInExternalFilesDir(
-                        this,
-                        Environment.DIRECTORY_DOWNLOADS,
-                        fileName
-                );
-
-        long id = dm.enqueue(req);
-
-        String keyPath = (mode == EnvMode.OUTDOOR)
-                ? PREF_DEPTH_MODEL_OUTDOOR_PATH
-                : PREF_DEPTH_MODEL_INDOOR_PATH;
-
-        // Save: which download, which mode, and where we expect the file to be
-        depthModelPrefs.edit()
-                .putLong(PREF_LAST_DEPTH_DOWNLOAD_ID, id)
-                .putString(PREF_LAST_DEPTH_DOWNLOAD_MODE, mode.name())
-                .putString(keyPath, outFile.getAbsolutePath())
-                .apply();
-
-        Toast.makeText(this, "Downloading depth model...", Toast.LENGTH_SHORT).show();
-    }
-
-    private final android.content.BroadcastReceiver downloadReceiver =
-            new android.content.BroadcastReceiver() {
-                @Override
-                public void onReceive(android.content.Context ctx, Intent intent) {
-                    if (!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction())) {
-                        return;
-                    }
-
-                    long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
-                    long expectedId = depthModelPrefs.getLong(PREF_LAST_DEPTH_DOWNLOAD_ID, -1L);
-                    if (id != expectedId) return; // Not our download
-
-                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                    if (dm == null) return;
-
-                    DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
-                    try (Cursor c = dm.query(q)) {
-                        if (c != null && c.moveToFirst()) {
-                            int statusIdx = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
-                            if (statusIdx == -1) return;
-
-                            int status = c.getInt(statusIdx);
-                            if (status == DownloadManager.STATUS_SUCCESSFUL) {
-
-                                // Which mode was this download for?
-                                String modeName = depthModelPrefs.getString(
-                                        PREF_LAST_DEPTH_DOWNLOAD_MODE,
-                                        EnvMode.INDOOR.name()
-                                );
-                                final EnvMode mode = EnvMode.valueOf(modeName);
-
-                                String keyPath = (mode == EnvMode.OUTDOOR)
-                                        ? PREF_DEPTH_MODEL_OUTDOOR_PATH
-                                        : PREF_DEPTH_MODEL_INDOOR_PATH;
-
-                                final String path = depthModelPrefs.getString(keyPath, null);
-
-                                if (path != null && new java.io.File(path).exists()) {
-                                    Log.i(TAG, "Depth model downloaded OK for mode=" + mode + " at " + path);
-
-                                    runOnUiThread(() -> {
-                                        try {
-                                            // Make sure envMode matches the model we just downloaded
-                                            if (envMode == mode) {
-                                                reloadPipelinesForEnvChange();
-                                            }
-
-                                            Toast.makeText(
-                                                    MainActivity.this,
-                                                    "Depth model loaded for " +
-                                                            (envMode == EnvMode.OUTDOOR ? "Outdoor" : "Indoor"),
-                                                    Toast.LENGTH_SHORT
-                                            ).show();
-
-                                        } catch (Throwable e) {
-                                            Log.w(TAG, "Failed to init depth after download", e);
-                                            Toast.makeText(
-                                                    MainActivity.this,
-                                                    "Depth model downloaded but failed to init",
-                                                    Toast.LENGTH_LONG
-                                            ).show();
-                                        }
-                                    });
-
-                                } else {
-                                    Log.w(TAG, "Depth model download reported success but file missing at " + path);
-                                    Toast.makeText(MainActivity.this,
-                                            "Depth model file missing after download",
-                                            Toast.LENGTH_LONG).show();
-                                }
-
-                            } else {
-                                Toast.makeText(MainActivity.this,
-                                        "Depth model download failed",
-                                        Toast.LENGTH_LONG).show();
-                            }
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error checking download status", e);
-                    }
-                }
-            };
-
-
-
-    private java.io.File getDepthModelFileForMode(EnvMode mode) {
-        String fileName = (mode == EnvMode.OUTDOOR)
-                ? "depth_anything_v2_metric_vkitti_vits_fp16.onnx"
-                : "depth_anything_v2_metric_hypersim_vits_fp16.onnx";
-
-        java.io.File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        if (dir == null) return null;
-        return new java.io.File(dir, fileName);
-    }
     private void initCameraProvider() {
         ProcessCameraProvider.getInstance(this).addListener(() -> {
             try {
@@ -1042,7 +873,15 @@ public class MainActivity extends ComponentActivity {
                     SystemClock.elapsedRealtimeNanos() - System.nanoTime();
             // ----------------------------------------------------------
 
-            if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+            boolean isLogicalMultiCamera = false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                Set<String> physicalIds = cc.getPhysicalCameraIds();
+                if (physicalIds != null && physicalIds.size() >= 2) {
+                    isLogicalMultiCamera = true;
+                }
+            }
+
+            if (lensFacing == CameraSelector.LENS_FACING_BACK && isLogicalMultiCamera) {
                 stereoProcessor = new StereoDepthProcessor(this, cc);
                 updateStereoSwitchAvailability(true);
             } else {
@@ -1133,6 +972,10 @@ public class MainActivity extends ComponentActivity {
     //  Depth calibration & UI
     // ---------------------------------------------------------------------------------------------
     private void setupCalibrationControls() {
+        if (calibrationSeek != null) {
+            calibrationSeek.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
+            calibrationSeek.setProgressTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
+        }
         DepthCalibrationHelper.bindCalibrationSeekBar(
                 calibrationSeek,
                 calibrationValue,
@@ -1147,8 +990,11 @@ public class MainActivity extends ComponentActivity {
         boolean stereoActive = stereoFusionEnabled
                 && stereoPipelineAvailable
                 && stereoProcessor != null;
-        depthModeText.setText(getString(
-                stereoActive ? R.string.depth_mode_stereo : R.string.depth_mode_mono));
+        String modeStr = getString(stereoActive ? R.string.depth_mode_stereo : R.string.depth_mode_mono);
+        String envStr = (envMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
+        String blurStr = blurEnabled ? "Blur: On" : "Blur: Off";
+        // Hiển thị kết hợp: "Mono • Indoor • Blur: On"
+        depthModeText.setText(String.format("%s • %s • %s", modeStr, envStr, blurStr));
     }
 
     private void updateStereoSwitchAvailability(boolean available) {
@@ -1164,6 +1010,11 @@ public class MainActivity extends ComponentActivity {
             } else {
                 stereoSwitch.setText(R.string.stereo_toggle);
                 stereoSwitch.setEnabled(true);
+                
+                // Đồng bộ trạng thái từ Prefs khi Stereo khả dụng (để khi mở app nó nhớ trạng thái cũ)
+                String savedMode = prefs.getString(PREF_DEPTH_MODE, "MONO");
+                stereoFusionEnabled = "STEREO".equals(savedMode);
+                stereoSwitch.setChecked(stereoFusionEnabled);
             }
             stereoSwitchInternalChange = false;
             updateDepthModeLabel();
@@ -1175,6 +1026,8 @@ public class MainActivity extends ComponentActivity {
     // ---------------------------------------------------------------------------------------------
     private void setupZoomControls() {
         if (zoomSeek == null || zoomValue == null) return;
+        zoomSeek.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
+        zoomSeek.setProgressTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
         ZoomHelper.setupZoomSeekBar(
                 zoomSeek,
                 zoomValue,
@@ -1282,4 +1135,3 @@ public class MainActivity extends ComponentActivity {
         return Math.max(0f, Math.min(1f, v));
     }
 }
-

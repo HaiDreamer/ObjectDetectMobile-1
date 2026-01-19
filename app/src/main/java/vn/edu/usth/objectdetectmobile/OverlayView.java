@@ -47,7 +47,15 @@ public class OverlayView extends View {
         float offsetX = (vw - frameW * scale) / 2f;
         float offsetY = (vh - frameH * scale) / 2f;
         for (ObjectDetector.Detection d : dets) {
-            box.setColor(Color.GREEN);
+            if (Float.isNaN(d.depth) || d.depth <= 0) {
+                box.setColor(Color.WHITE); // Mặc định (không có depth)
+            } else if (d.depth < 150) {
+                box.setColor(Color.RED);   // Gần (< 1.5m)
+            } else if (d.depth < 300) {
+                box.setColor(Color.YELLOW); // Trung bình (1.5m - 3m)
+            } else {
+                box.setColor(Color.GREEN); // Xa (> 3m)
+            }
             float left = offsetX + d.x1 * scale;
             float top = offsetY + d.y1 * scale;
             float right = offsetX + d.x2 * scale;

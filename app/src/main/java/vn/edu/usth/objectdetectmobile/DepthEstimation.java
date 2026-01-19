@@ -1,6 +1,7 @@
 package vn.edu.usth.objectdetectmobile;
 
 import android.os.Bundle;
+import android.content.SharedPreferences;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.LinearLayout;
@@ -10,6 +11,7 @@ import androidx.core.content.ContextCompat;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.view.View;
+import android.widget.Toast;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
@@ -19,11 +21,21 @@ public class DepthEstimation extends AppCompatActivity {
     private LinearLayout layoutMonocular, layoutStereo;
     private SwitchCompat switchIndoor, switchOutdoor;
     private TextView statusModeMono, statusModeStereo;
+    
+    private SharedPreferences prefs;
+    private static final String PREF_ENV_MODE = "pref_env_mode";
+    private static final String PREF_DEPTH_MODE = "pref_depth_mode"; // MONO or STEREO
+    
+    private boolean stereoAvailable = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.depth_estimation); // tên file XML bạn gửi
+        
+        prefs = DepthCalibrationHelper.getPrefs(this);
+        // Nhận trạng thái hỗ trợ Stereo từ Settings
+        stereoAvailable = getIntent().getBooleanExtra("STEREO_AVAILABLE", false);
 
         layoutMonocular = findViewById(R.id.layoutMonocular);
         layoutStereo = findViewById(R.id.layoutStereo);
@@ -43,7 +55,7 @@ public class DepthEstimation extends AppCompatActivity {
         toggleGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (isChecked) {
                 if (checkedId == R.id.buttonMonocular) {
-                    // Monocular được chọn → nền xanh, viền xanh
+                    // Monocular được chọn
                     buttonMonocular.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#C2FFB5")));
                     buttonMonocular.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#24C400")));
 
@@ -57,9 +69,18 @@ public class DepthEstimation extends AppCompatActivity {
 
                     // Cập nhật status Monocular
                     updateStatusMonocular();
+                    
+                    // Lưu Prefs
+                    prefs.edit().putString(PREF_DEPTH_MODE, "MONO").apply();
 
                 } else if (checkedId == R.id.buttonStereo) {
-                    // Stereo được chọn → nền cam, viền cam
+                    // Kiểm tra phần cứng
+                    if (!stereoAvailable) {
+                        Toast.makeText(this, "Thiết bị không hỗ trợ Stereo Camera", Toast.LENGTH_SHORT).show();
+                        toggleGroup.check(R.id.buttonMonocular); // Revert về Mono
+                        return;
+                    }
+                    
                     buttonStereo.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F7DFA4")));
                     buttonStereo.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#EDA900")));
 
@@ -77,6 +98,9 @@ public class DepthEstimation extends AppCompatActivity {
 
                     // Cập nhật status Stereo
                     updateStatusStereo();
+                    
+                    // Lưu Prefs
+                    prefs.edit().putString(PREF_DEPTH_MODE, "STEREO").apply();
                 }
             }
         });
@@ -87,6 +111,8 @@ public class DepthEstimation extends AppCompatActivity {
                 // Nếu Indoor bật → tắt Outdoor
                 switchOutdoor.setChecked(false);
             }
+            // Lưu Prefs (Nếu bật -> INDOOR, nếu tắt mà Outdoor cũng tắt -> mặc định INDOOR)
+            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "INDOOR").apply();
             updateStatusMonocular();
         });
 
@@ -95,6 +121,8 @@ public class DepthEstimation extends AppCompatActivity {
                 // Nếu Outdoor bật → tắt Indoor
                 switchIndoor.setChecked(false);
             }
+            // Lưu Prefs
+            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "OUTDOOR").apply();
             updateStatusMonocular();
         });
 
@@ -103,6 +131,30 @@ public class DepthEstimation extends AppCompatActivity {
         switchIndoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
         switchOutdoor.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
         switchOutdoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
+
+        // --- SETUP UI STATE FROM PREFS ---
+        // Gọi hàm này SAU KHI đã set listener để logic UI trong listener được kích hoạt
+        setupInitialState(toggleGroup, buttonMonocular, buttonStereo);
+    }
+    
+    private void setupInitialState(MaterialButtonToggleGroup group, MaterialButton btnMono, MaterialButton btnStereo) {
+        // 1. Load Depth Mode (Mono/Stereo)
+        String depthMode = prefs.getString(PREF_DEPTH_MODE, "MONO");
+        if ("STEREO".equals(depthMode) && stereoAvailable) {
+            group.check(R.id.buttonStereo);
+        } else {
+            group.check(R.id.buttonMonocular);
+        }
+        
+        // 2. Load Env Mode (Indoor/Outdoor)
+        String envMode = prefs.getString(PREF_ENV_MODE, "INDOOR");
+        if ("OUTDOOR".equals(envMode)) {
+            switchOutdoor.setChecked(true);
+            switchIndoor.setChecked(false);
+        } else {
+            switchIndoor.setChecked(true);
+            switchOutdoor.setChecked(false);
+        }
     }
 
     // Cập nhật status cho Monocular

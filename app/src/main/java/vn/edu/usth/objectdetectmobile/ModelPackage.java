@@ -1,13 +1,22 @@
 package vn.edu.usth.objectdetectmobile;
 
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.cardview.widget.CardView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class ModelPackage extends AppCompatActivity {
     private ImageButton buttonBack;
@@ -15,6 +24,8 @@ public class ModelPackage extends AppCompatActivity {
     private ImageView bin1, bin2;
     private TextView textModel3, textModel4;
     private ImageView down1, down2;
+    
+    private List<ModelUtils.ModelInfo> allModels;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,26 +48,84 @@ public class ModelPackage extends AppCompatActivity {
 
         buttonBack.setOnClickListener(v -> finish());
 
-        setupActions();
+        allModels = ModelUtils.getAvailableModels();
+        
+        // Đăng ký receiver để cập nhật UI khi tải xong
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(downloadReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        }
     }
 
-    private void setupActions() {
-        bin1.setOnClickListener(v ->
-                Toast.makeText(this, "Xóa " + textModel1.getText(), Toast.LENGTH_SHORT).show()
-        );
-
-        bin2.setOnClickListener(v ->
-                Toast.makeText(this, "Xóa " + textModel2.getText(), Toast.LENGTH_SHORT).show()
-        );
-
-        down1.setOnClickListener(v ->
-                Toast.makeText(this, "Tải " + textModel3.getText(), Toast.LENGTH_SHORT).show()
-        );
-
-        down2.setOnClickListener(v ->
-                Toast.makeText(this, "Tải " + textModel4.getText(), Toast.LENGTH_SHORT).show()
-        );
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshUI();
     }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(downloadReceiver);
+    }
+
+    private void refreshUI() {
+        List<ModelUtils.ModelInfo> downloaded = new ArrayList<>();
+        List<ModelUtils.ModelInfo> notDownloaded = new ArrayList<>();
+
+        for (ModelUtils.ModelInfo m : allModels) {
+            if (ModelUtils.isModelDownloaded(this, m)) {
+                downloaded.add(m);
+            } else {
+                notDownloaded.add(m);
+            }
+        }
+
+        // --- Fill Downloaded Section (Slot 1 & 2) ---
+        fillSlot(textModel1, bin1, downloaded, 0, true);
+        fillSlot(textModel2, bin2, downloaded, 1, true);
+
+        // --- Fill Available Section (Slot 3 & 4) ---
+        fillSlot(textModel3, down1, notDownloaded, 0, false);
+        fillSlot(textModel4, down2, notDownloaded, 1, false);
+    }
+
+    private void fillSlot(TextView tv, ImageView btn, List<ModelUtils.ModelInfo> list, int index, boolean isDelete) {
+        if (index < list.size()) {
+            ModelUtils.ModelInfo model = list.get(index);
+            tv.setText(model.name);
+            tv.setVisibility(View.VISIBLE);
+            btn.setVisibility(View.VISIBLE);
+            
+            // Gỡ listener cũ để tránh duplicate
+            btn.setOnClickListener(null);
+            
+            if (isDelete) {
+                btn.setOnClickListener(v -> {
+                    ModelUtils.deleteModel(this, model);
+                    Toast.makeText(this, "Đã xóa " + model.name, Toast.LENGTH_SHORT).show();
+                    refreshUI();
+                });
+            } else {
+                btn.setOnClickListener(v -> {
+                    ModelUtils.downloadModel(this, model);
+                    Toast.makeText(this, "Đang tải " + model.name + "...", Toast.LENGTH_SHORT).show();
+                });
+            }
+        } else {
+            // Slot trống
+            tv.setVisibility(View.INVISIBLE);
+            btn.setVisibility(View.INVISIBLE);
+            btn.setOnClickListener(null);
+        }
+    }
+    
+    private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // Khi có file tải xong, refresh lại list
+            refreshUI();
+        }
+    };
 }
-
-
