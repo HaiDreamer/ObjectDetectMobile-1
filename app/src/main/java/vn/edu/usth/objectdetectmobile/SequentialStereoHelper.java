@@ -74,7 +74,8 @@ public class SequentialStereoHelper {
             @NonNull PreviewView previewView,
             @NonNull ExecutorService sharedExecutor,
             @NonNull List<CameraUtils.CamInfo> backCameraInfos,
-            @NonNull ObjectDetector detector,
+            ObjectDetector detectorOd,
+            ObjectDetector detectorSeg,
             DepthEstimator depthEstimator,          // may be null
             boolean blurEnabled,
             int blurRadius,
@@ -100,7 +101,8 @@ public class SequentialStereoHelper {
                             activity,
                             cameraProvider,
                             previewView,
-                            detector,
+                            detectorOd,
+                            detectorSeg,
                             depthEstimator,
                             blurEnabled,
                             blurRadius,
@@ -149,7 +151,8 @@ public class SequentialStereoHelper {
             @NonNull ComponentActivity activity,
             @NonNull ProcessCameraProvider cameraProvider,
             @NonNull PreviewView previewView,
-            @NonNull ObjectDetector detector,
+            ObjectDetector detectorOd,
+            ObjectDetector detectorSeg,
             DepthEstimator depthEstimator,  // may be null
             boolean blurEnabled,
             int blurRadius,
@@ -209,8 +212,18 @@ public class SequentialStereoHelper {
                             ? ImageUtils.boxBlur(argb, frameW, frameH, blurRadius)
                             : argb;
 
-                    List<ObjectDetector.Detection> dets =
-                            detector.detect(detectorInput, frameW, frameH);
+                    List<ObjectDetector.Detection> dets = new ArrayList<>();
+                    if (detectorOd != null) {
+                        List<ObjectDetector.Detection> od =
+                                detectorOd.detect(detectorInput, frameW, frameH);
+                        if (od != null && !od.isEmpty()) dets.addAll(od);
+                    }
+                    if (detectorSeg != null) {
+                        List<ObjectDetector.Detection> seg =
+                                detectorSeg.detect(detectorInput, frameW, frameH);
+                        if (seg != null && !seg.isEmpty()) dets.addAll(seg);
+                    }
+                    if (dets.isEmpty()) dets = null;
 
                     DepthEstimator.DepthMap depth = null;
                     if (depthEstimator != null) {

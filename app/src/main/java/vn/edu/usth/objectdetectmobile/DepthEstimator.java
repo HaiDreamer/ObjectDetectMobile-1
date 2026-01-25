@@ -24,8 +24,7 @@ import ai.onnxruntime.OrtSession;
 
 /**
  * Lightweight wrapper around the Depth Anything ONNX model.
- * Creates a fresh ORT session for each inference so the detector can continue running even
- * if depth runs out of memory. This keeps the two pipelines decoupled.
+ * Keeps a single ORT session alive to avoid per-frame session creation costs.
  */
 public class DepthEstimator implements AutoCloseable {
     private static final String TAG = "DepthEstimator";
@@ -87,6 +86,9 @@ public class DepthEstimator implements AutoCloseable {
 
     private final OrtEnvironment env;
     private final OrtSession.SessionOptions sessionOptions;
+    private final OrtSession session;
+    private final String inputName;
+    private final Object sessionLock = new Object();
     private final String modelPath;
 
     private final int inputSize = 518;
@@ -102,6 +104,8 @@ public class DepthEstimator implements AutoCloseable {
         env = OrtEnvironment.getEnvironment();
         modelPath = resolveModelPath(ctx, mode);
         sessionOptions = new OrtSession.SessionOptions();
+        session = env.createSession(modelPath, sessionOptions);
+        inputName = session.getInputInfo().keySet().iterator().next();
     }
 
     public static boolean isModelAvailable(@NonNull Context ctx, EnvMode mode) {
@@ -173,19 +177,16 @@ public class DepthEstimator implements AutoCloseable {
 
         float[] rawDepth;
         int rawH, rawW;
-        try (OrtSession session = env.createSession(modelPath, sessionOptions);
-             OnnxTensor tensor = input) {
-            String inputName = session.getInputInfo().keySet().iterator().next();
-            try (OrtSession.Result out = session.run(Collections.singletonMap(inputName, tensor))) {
-                OnnxValue ov = out.get(0);
-                OnnxTensor depthTensor = (OnnxTensor) ov;
-                long[] outShape = depthTensor.getInfo().getShape(); // expect [1,H,W]
-                rawH = (int) outShape[1];
-                rawW = (int) outShape[2];
-                FloatBuffer buf = depthTensor.getFloatBuffer();
-                rawDepth = new float[buf.remaining()];
-                buf.get(rawDepth);
-            }
+        try (OnnxTensor tensor = input;
+             OrtSession.Result out = runSession(tensor)) {
+            OnnxValue ov = out.get(0);
+            OnnxTensor depthTensor = (OnnxTensor) ov;
+            long[] outShape = depthTensor.getInfo().getShape(); // expect [1,H,W]
+            rawH = (int) outShape[1];
+            rawW = (int) outShape[2];
+            FloatBuffer buf = depthTensor.getFloatBuffer();
+            rawDepth = new float[buf.remaining()];
+            buf.get(rawDepth);
         }
 
         float[] cropped = crop(rawDepth, rawW, rawH, prep.padX, prep.padY, prep.contentW, prep.contentH);
@@ -354,7 +355,14 @@ public class DepthEstimator implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
+        session.close();
         sessionOptions.close();
+    }
+
+    private OrtSession.Result runSession(OnnxTensor tensor) throws OrtException {
+        synchronized (sessionLock) {
+            return session.run(Collections.singletonMap(inputName, tensor));
+        }
     }
 }
 

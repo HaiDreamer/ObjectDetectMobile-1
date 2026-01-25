@@ -1,3 +1,4 @@
+
 <resources>
     <string name="app_name">ObjectDetectMobile</string>
     <string name="action_settings">Settings</string>
@@ -6,7 +7,7 @@
     <string name="next">Next</string>
     <string name="previous">Previous</string>
 
-    <string name="realtime_detection">Realtime</string>
+    <string name="realtime_detection">Streaming</string>
     <string name="single_detect">Detect</string>
     <string name="blur_toggle">Blur input</string>
     <string name="stereo_toggle">Stereo fusion</string>
@@ -26,4 +27,5 @@
     <string name="dual_shot">Dual shot</string>
     <string name="zoom_not_supported">Zoom not suppported\n</string>
     <string name="environment_toggle">Outdoor mode</string>
+    <string name="depth_async_toggle">Depth Async</string>
 </resources>

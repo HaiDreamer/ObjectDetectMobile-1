@@ -17,6 +17,8 @@ public class Settings extends AppCompatActivity {
 
     private static final String PREF_BLUR_ENABLED = "pref_blur_enabled";
     private static final boolean ENABLE_INPUT_BLUR = true; // Default
+    private static final String PREF_DEPTH_ASYNC = "pref_depth_async";
+    private static final boolean DEFAULT_DEPTH_ASYNC = true;
 
     private SharedPreferences prefs;
     private boolean stereoAvailable = false;
@@ -33,10 +35,12 @@ public class Settings extends AppCompatActivity {
 
         ImageButton buttonBack = findViewById(R.id.buttonBack);
         SwitchCompat switchBlur = findViewById(R.id.switchBlur);
+        SwitchCompat switchDepthAsync = findViewById(R.id.switchDepthAsync);
         CardView depthCard = findViewById(R.id.DepthEstimation);
         CardView packageCard = findViewById(R.id.ModelPackage);
         CardView instructionCard = findViewById(R.id.Instruction);
         CardView blurCard = findViewById(R.id.BlurInput);
+        CardView depthAsyncCard = findViewById(R.id.DepthAsync);
 
         buttonBack.setOnClickListener(v -> finish());
 
@@ -77,6 +81,23 @@ public class Settings extends AppCompatActivity {
             blurCard.setOnClickListener(v -> {
                 if (switchBlur != null) {
                     switchBlur.toggle();
+                }
+            });
+        }
+
+        // Setup Depth Async Switch
+        boolean isDepthAsync = prefs.getBoolean(PREF_DEPTH_ASYNC, DEFAULT_DEPTH_ASYNC);
+        switchDepthAsync.setChecked(isDepthAsync);
+
+        switchDepthAsync.setOnCheckedChangeListener((buttonView, isChecked) ->
+                prefs.edit().putBoolean(PREF_DEPTH_ASYNC, isChecked).apply());
+        switchDepthAsync.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
+        switchDepthAsync.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
+
+        if (depthAsyncCard != null) {
+            depthAsyncCard.setOnClickListener(v -> {
+                if (switchDepthAsync != null) {
+                    switchDepthAsync.toggle();
                 }
             });
         }

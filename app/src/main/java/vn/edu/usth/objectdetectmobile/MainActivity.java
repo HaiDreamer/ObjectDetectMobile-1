@@ -45,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.onnxruntime.OrtException;
 
@@ -82,6 +83,8 @@ public class MainActivity extends ComponentActivity {
     private static final String PREF_ENV_MODE = "pref_env_mode";
     private static final String PREF_BLUR_ENABLED = "pref_blur_enabled";
     private static final String PREF_DEPTH_MODE = "pref_depth_mode"; // MONO or STEREO
+    private static final String PREF_DEPTH_ASYNC = "pref_depth_async";
+    private static final boolean DEFAULT_DEPTH_ASYNC = true;
 
     private EnvMode envMode = EnvMode.INDOOR;  // default = Indoor
     private SwitchMaterial environmentSwitch;
@@ -120,7 +123,8 @@ public class MainActivity extends ComponentActivity {
     // ---------------------------------------------------------------------------------------------
     //  Core components
     // ---------------------------------------------------------------------------------------------
-    private ObjectDetector detector;
+    private ObjectDetector detectorOd;
+    private ObjectDetector detectorSeg;
     private volatile DepthEstimator depthEstimator;     //Marking the field volatile guarantees visibility of the latest reference across threads
     private StereoDepthProcessor stereoProcessor;
     private ProcessCameraProvider cameraProvider;
@@ -137,6 +141,8 @@ public class MainActivity extends ComponentActivity {
     // Reuse your existing helper state holder
     final DepthPipelineHelper.DepthState depthState =
             new DepthPipelineHelper.DepthState();
+    // Prevent overlapping depth runs when we make depth async.
+    private final AtomicBoolean depthBusy = new AtomicBoolean(false);
 
     private volatile boolean stereoFusionEnabled = false;
     private boolean stereoPipelineAvailable = false;
@@ -148,6 +154,7 @@ public class MainActivity extends ComponentActivity {
     // ---------------------------------------------------------------------------------------------
     private volatile boolean realtimeEnabled = true;
     private volatile boolean blurEnabled = ENABLE_INPUT_BLUR;
+    private volatile boolean depthAsyncEnabled = DEFAULT_DEPTH_ASYNC;
     private volatile boolean singleShotRequested = false;
     private volatile boolean singleShotRunning = false;
 
@@ -185,8 +192,8 @@ public class MainActivity extends ComponentActivity {
         depthModelPrefs = getSharedPreferences(DEPTH_MODEL_PREFS, MODE_PRIVATE);
         // Single-thread CameraX analyzer
         exec = Executors.newSingleThreadExecutor();
-        // Two-thread inference pool: YOLO + depth
-        inferenceExec = Executors.newFixedThreadPool(2);
+        // Three-thread inference pool: OD + seg + depth
+        inferenceExec = Executors.newFixedThreadPool(3);
 
         initViews();
         initPreferencesAndCalibrationKey();
@@ -220,11 +227,18 @@ public class MainActivity extends ComponentActivity {
         super.onDestroy();
         if (exec != null) exec.shutdownNow();
         if (inferenceExec != null) inferenceExec.shutdownNow();
-        if (detector != null) {
+        if (detectorOd != null) {
             try {
-                detector.close();
+                detectorOd.close();
             } catch (Exception e) {
-                Log.e(TAG, "Detector close failed", e);
+                Log.e(TAG, "OD detector close failed", e);
+            }
+        }
+        if (detectorSeg != null) {
+            try {
+                detectorSeg.close();
+            } catch (Exception e) {
+                Log.e(TAG, "Seg detector close failed", e);
             }
         }
         if (depthEstimator != null) {
@@ -264,6 +278,9 @@ public class MainActivity extends ComponentActivity {
                 if (blurSwitch != null) blurSwitch.setChecked(blurEnabled);
                 updateDepthModeLabel();
             });
+        } else if (PREF_DEPTH_ASYNC.equals(key)) {
+            depthAsyncEnabled = sharedPreferences.getBoolean(key, DEFAULT_DEPTH_ASYNC);
+            runOnUiThread(this::updateDepthModeLabel);
         } else if (PREF_DEPTH_MODE.equals(key)) {
             String mode = sharedPreferences.getString(key, "MONO");
             boolean isStereo = "STEREO".equals(mode);
@@ -297,10 +314,14 @@ public class MainActivity extends ComponentActivity {
         calibrationValue = findViewById(R.id.textCalibrationValue);
         environmentSwitch = findViewById(R.id.switchEnvironment);
 
-        //labels of object detection
-        String[] labelArr = LabelHelper.loadLabels(this, "labels.txt");
-        cachedLabels = java.util.Arrays.asList(labelArr);
-        overlay.setLabels(labelArr);
+        // labels for OD + segmentation
+        String[] odLabelsArr = LabelHelper.loadLabels(this, "labels_od.txt");
+        if (odLabelsArr.length == 0) {
+            odLabelsArr = LabelHelper.loadLabels(this, "labels.txt");
+        }
+        String[] segLabelsArr = LabelHelper.loadLabels(this, "labels_seg.txt");
+        cachedLabels = java.util.Arrays.asList(odLabelsArr);
+        overlay.setLabels(odLabelsArr, segLabelsArr);
     }
 
     private void initPreferencesAndCalibrationKey() {
@@ -330,6 +351,7 @@ public class MainActivity extends ComponentActivity {
 
         // Sync Blur
         blurEnabled = prefs.getBoolean(PREF_BLUR_ENABLED, ENABLE_INPUT_BLUR);
+        depthAsyncEnabled = prefs.getBoolean(PREF_DEPTH_ASYNC, DEFAULT_DEPTH_ASYNC);
     }
 
 
@@ -530,10 +552,26 @@ public class MainActivity extends ComponentActivity {
 
     private void initDetectorAndDepth() {
         try {
-            detector = new ObjectDetector(this);
+            detectorOd = new ObjectDetector(this, "best.onnx", ObjectDetector.Detection.SOURCE_OD);
         } catch (Throwable e) {
-            Log.e(TAG, "Detector init failed", e);
-            Toast.makeText(this, "Detector load failed: " + e.getMessage(),
+            detectorOd = null;
+            Log.w(TAG, "OD detector init failed (best.onnx), trying fallback", e);
+            try {
+                detectorOd = new ObjectDetector(this, "yolov8m_compatible.onnx",
+                        ObjectDetector.Detection.SOURCE_OD);
+            } catch (Throwable fallbackErr) {
+                detectorOd = null;
+                Log.e(TAG, "OD detector init failed (fallback)", fallbackErr);
+            }
+        }
+        try {
+            detectorSeg = new ObjectDetector(this, "bestseg.onnx", ObjectDetector.Detection.SOURCE_SEG);
+        } catch (Throwable e) {
+            detectorSeg = null;
+            Log.e(TAG, "Seg detector init failed", e);
+        }
+        if (detectorOd == null && detectorSeg == null) {
+            Toast.makeText(this, "Detector load failed: no model available",
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -684,16 +722,25 @@ public class MainActivity extends ComponentActivity {
         try {
             DepthEstimator.DepthMap map =
                     depthEstimator.estimate(argb, width, height);
+            long doneMs = SystemClock.elapsedRealtime();
 
             synchronized (depthState) {
                 depthState.lastDepthMap = map;
-                depthState.lastDepthMillis = nowMs;
-                depthState.lastDepthCacheTime = nowMs;
+                depthState.lastDepthMillis = doneMs;
+                depthState.lastDepthCacheTime = doneMs;
             }
             return map;
         } catch (Exception e) {
             Log.e(TAG, "Depth estimation failed", e);
             return null;
+        }
+    }
+
+    private DepthEstimator.DepthMap getCachedDepthMap(long nowMs) {
+        synchronized (depthState) {
+            if (depthState.lastDepthMap == null) return null;
+            if ((nowMs - depthState.lastDepthCacheTime) > DEPTH_CACHE_MS) return null;
+            return depthState.lastDepthMap;
         }
     }
 
@@ -753,41 +800,85 @@ public class MainActivity extends ComponentActivity {
                     ? ImageUtils.boxBlur(argb, frameW, frameH, BLUR_RADIUS)
                     : argb;
 
-            final long nowMs = SystemClock.elapsedRealtime();
-
             // Run YOLO + depth in parallel on inferenceExec
             int finalFrameW1 = frameW;
             int finalFrameH1 = frameH;
 
-            Future<List<ObjectDetector.Detection>> detFuture =
-                    inferenceExec.submit(() -> {
-                        try {
-                            return detector.detect(detectorInput, finalFrameW1, finalFrameH1);
-                        } catch (OrtException e) {
-                            Log.e(TAG, "detect failed", e);
-                            return null;
-                        } catch (Throwable t) {
-                            Log.e(TAG, "detect crashed", t);
-                            return null;
-                        }
-                    });
+            Future<List<ObjectDetector.Detection>> detFutureOd = null;
+            Future<List<ObjectDetector.Detection>> detFutureSeg = null;
+            if (detectorOd != null) {
+                detFutureOd = inferenceExec.submit(() -> {
+                    try {
+                        return detectorOd.detect(detectorInput, finalFrameW1, finalFrameH1);
+                    } catch (OrtException e) {
+                        Log.e(TAG, "OD detect failed", e);
+                        return null;
+                    } catch (Throwable t) {
+                        Log.e(TAG, "OD detect crashed", t);
+                        return null;
+                    }
+                });
+            }
+            if (detectorSeg != null) {
+                detFutureSeg = inferenceExec.submit(() -> {
+                    try {
+                        return detectorSeg.detect(detectorInput, finalFrameW1, finalFrameH1);
+                    } catch (OrtException e) {
+                        Log.e(TAG, "Seg detect failed", e);
+                        return null;
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Seg detect crashed", t);
+                        return null;
+                    }
+                });
+            }
 
             Future<DepthEstimator.DepthMap> depthFuture = null;
             if (depthEstimator != null) {
-                int[] finalArgb = argb;
-                int finalFrameW = frameW;
-                int finalFrameH = frameH;
-                depthFuture = inferenceExec.submit(() ->
-                        maybeRunDepthSync(finalArgb, finalFrameW, finalFrameH, nowMs)
-                );
+                if (depthAsyncEnabled) {
+                    if (depthBusy.compareAndSet(false, true)) {
+                        int[] finalArgb = argb;
+                        int finalFrameW = frameW;
+                        int finalFrameH = frameH;
+                        inferenceExec.submit(() -> {
+                            try {
+                                maybeRunDepthSync(finalArgb, finalFrameW, finalFrameH,
+                                        SystemClock.elapsedRealtime());
+                            } finally {
+                                depthBusy.set(false);
+                            }
+                        });
+                    }
+                } else {
+                    int[] finalArgb = argb;
+                    int finalFrameW = frameW;
+                    int finalFrameH = frameH;
+                    depthFuture = inferenceExec.submit(() ->
+                            maybeRunDepthSync(finalArgb, finalFrameW, finalFrameH,
+                                    SystemClock.elapsedRealtime())
+                    );
+                }
             }
 
             // Wait for results
-            List<ObjectDetector.Detection> dets = detFuture.get();
+            List<ObjectDetector.Detection> dets = new ArrayList<>();
+            if (detFutureOd != null) {
+                List<ObjectDetector.Detection> od = detFutureOd.get();
+                if (od != null && !od.isEmpty()) dets.addAll(od);
+            }
+            if (detFutureSeg != null) {
+                List<ObjectDetector.Detection> seg = detFutureSeg.get();
+                if (seg != null && !seg.isEmpty()) dets.addAll(seg);
+            }
+            if (dets.isEmpty()) dets = null;
 
             DepthEstimator.DepthMap depthMap = null;
-            if (depthFuture != null) {
-                depthMap = depthFuture.get();
+            if (depthEstimator != null) {
+                if (depthAsyncEnabled) {
+                    depthMap = getCachedDepthMap(SystemClock.elapsedRealtime());
+                } else if (depthFuture != null) {
+                    depthMap = depthFuture.get();
+                }
             }
 
             if (depthMap != null && dets != null) {
@@ -933,7 +1024,8 @@ public class MainActivity extends ComponentActivity {
                 previewView,
                 exec,
                 backCameraInfos,
-                detector,
+                detectorOd,
+                detectorSeg,
                 depthEstimator,
                 blurEnabled,
                 BLUR_RADIUS,
@@ -993,8 +1085,10 @@ public class MainActivity extends ComponentActivity {
         String modeStr = getString(stereoActive ? R.string.depth_mode_stereo : R.string.depth_mode_mono);
         String envStr = (envMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
         String blurStr = blurEnabled ? "Blur: On" : "Blur: Off";
-        // Hiển thị kết hợp: "Mono • Indoor • Blur: On"
-        depthModeText.setText(String.format("%s • %s • %s", modeStr, envStr, blurStr));
+        String depthAsyncStr = depthAsyncEnabled ? "Depth Async: On" : "Depth Async: Off";
+        // Hiển thị kết hợp: "Mono • Indoor • Blur: On • Depth Async: On"
+        depthModeText.setText(String.format("%s • %s • %s • %s",
+                modeStr, envStr, blurStr, depthAsyncStr));
     }
 
     private void updateStereoSwitchAvailability(boolean available) {
@@ -1095,6 +1189,7 @@ public class MainActivity extends ComponentActivity {
         final float invW = 1.0f / Math.max(1, frameW);
 
         for (ObjectDetector.Detection det : results) {
+            if (det.source != ObjectDetector.Detection.SOURCE_OD) continue;
             if (Float.isNaN(det.depth) || det.depth <= 0) continue;
 
             // Your pipeline: det.depth printed as "cm" in OverlayView -> convert to meters

@@ -13,16 +13,48 @@ import static java.lang.Math.*;
 
 public class ObjectDetector implements AutoCloseable {
     public static class Detection {
+        public static final int SOURCE_OD = 0;
+        public static final int SOURCE_SEG = 1;
+
+        public static class Mask {
+            public final byte[] alpha;
+            public final int width;
+            public final int height;
+            public final int x;
+            public final int y;
+
+            public Mask(byte[] alpha, int width, int height, int x, int y) {
+                this.alpha = alpha;
+                this.width = width;
+                this.height = height;
+                this.x = x;
+                this.y = y;
+            }
+        }
+
         public final float x1,y1,x2,y2,score,depth;
         public final int cls;       // class id
+        public final int source;    // source model id
+        public final float[] maskCoeffs;
+        public final Mask mask;
         public Detection(float x1,float y1,float x2,float y2,float score,int cls){
-            this(x1,y1,x2,y2,score,cls,Float.NaN);
+            this(x1,y1,x2,y2,score,cls,Float.NaN, SOURCE_OD, null, null);
         }
         public Detection(float x1,float y1,float x2,float y2,float score,int cls,float depth){
-            this.x1=x1; this.y1=y1; this.x2=x2; this.y2=y2; this.score=score; this.cls=cls; this.depth=depth;
+            this(x1,y1,x2,y2,score,cls,depth, SOURCE_OD, null, null);
+        }
+        public Detection(float x1,float y1,float x2,float y2,float score,int cls,
+                         float depth, int source, float[] maskCoeffs, Mask mask){
+            this.x1=x1; this.y1=y1; this.x2=x2; this.y2=y2;
+            this.score=score; this.cls=cls; this.depth=depth; this.source=source;
+            this.maskCoeffs = maskCoeffs;
+            this.mask = mask;
         }
         public Detection withDepth(float depthValue){
-            return new Detection(x1,y1,x2,y2,score,cls,depthValue);
+            return new Detection(x1,y1,x2,y2,score,cls,depthValue, source, maskCoeffs, mask);
+        }
+        public Detection withMask(Mask maskValue){
+            return new Detection(x1,y1,x2,y2,score,cls,depth, source, null, maskValue);
         }
     }
 
@@ -30,13 +62,36 @@ public class ObjectDetector implements AutoCloseable {
     private final OrtSession session;
     private final int inputW = 640, inputH = 640;
     private final float confThresh = 0.25f, iouThresh = 0.45f;
+    private final float maskThreshold = 0.5f;
     private final String inputName;
+    private final int sourceId;
 
     public ObjectDetector(@NonNull Context ctx) throws OrtException {
+        this(ctx, null, Detection.SOURCE_OD);
+    }
+
+    public ObjectDetector(@NonNull Context ctx, String assetName, int sourceId) throws OrtException {
         env = OrtEnvironment.getEnvironment();
-        String modelPath = Util.cacheAsset(ctx, "yolov8m_compatible.onnx");
+        String modelAsset = assetName;
+        if (modelAsset == null || modelAsset.isEmpty()) {
+            modelAsset = Util.chooseFirstExistingAsset(ctx,
+                    "bestseg.onnx",
+                    "best.onnx",
+                    "yolov8m_compatible.onnx");
+        }
+        this.sourceId = sourceIdFor(modelAsset, sourceId);
+        String modelPath = Util.cacheAsset(ctx, modelAsset);
         OrtSession.SessionOptions so = new OrtSession.SessionOptions();
-        session = env.createSession(modelPath, so);
+        OrtSession created;
+        try {
+            created = env.createSession(modelPath, so);
+        } catch (OrtException firstErr) {
+            // Cached file may be truncated; delete and retry once.
+            Util.deleteCachedAsset(ctx, modelAsset);
+            modelPath = Util.cacheAsset(ctx, modelAsset);
+            created = env.createSession(modelPath, so);
+        }
+        session = created;
         inputName = session.getInputInfo().keySet().iterator().next();
     }
 
@@ -47,8 +102,10 @@ public class ObjectDetector implements AutoCloseable {
                 new long[]{1,3,inputH,inputW});
 
         try (OrtSession.Result out = session.run(Collections.singletonMap(inputName, input))) {
-            OnnxValue ov = out.get(0);
-            return parse(ov, lb.scale, lb.padX, lb.padY, srcW, srcH);
+            if (out.size() >= 2) {
+                return parseSeg(out.get(0), out.get(1), lb, srcW, srcH);
+            }
+            return parseDet(out.get(0), lb.scale, lb.padX, lb.padY, srcW, srcH);
         }
     }
 
@@ -84,14 +141,14 @@ public class ObjectDetector implements AutoCloseable {
         return out;
     }
 
-    // --- parse YOLOv8 output + NMS ---
-    private List<Detection> parse(OnnxValue val, float scale, float padX, float padY, int imgW, int imgH) throws OrtException {
+    // --- parse YOLOv8 det output + NMS ---
+    private List<Detection> parseDet(OnnxValue val, float scale, float padX, float padY, int imgW, int imgH) throws OrtException {
         OnnxTensor t = (OnnxTensor) val;
         long[] shape = t.getInfo().getShape(); // expect [1,84,N] or [1,N,84]
-        float[] flat = t.getFloatBuffer().array();
+        float[] flat = toArray(t.getFloatBuffer());
 
         int dim1 = (int)shape[1], dim2 = (int)shape[2];
-        boolean colsAreProps = (dim1==84); // [1,84,N]
+        boolean colsAreProps = dim1 < dim2; // [1,props,N]
         int props = colsAreProps ? dim1 : dim2;
         int clsCount = props - 4;
         int N = colsAreProps ? dim2 : dim1;
@@ -117,7 +174,7 @@ public class ObjectDetector implements AutoCloseable {
                 float y1 = clamp((by - padY)/scale, 0, imgH);
                 float x2 = clamp((ex - padX)/scale, 0, imgW);
                 float y2 = clamp((ey - padY)/scale, 0, imgH);
-                dets.add(new Detection(x1,y1,x2,y2,bestS,bestC));
+                dets.add(new Detection(x1,y1,x2,y2,bestS,bestC,Float.NaN, sourceId, null, null));
             }
         } else {
             for (int i=0;i<N;i++){
@@ -137,10 +194,109 @@ public class ObjectDetector implements AutoCloseable {
                 float y1 = clamp((by - padY)/scale, 0, imgH);
                 float x2 = clamp((ex - padX)/scale, 0, imgW);
                 float y2 = clamp((ey - padY)/scale, 0, imgH);
-                dets.add(new Detection(x1,y1,x2,y2,bestS,bestC));
+                dets.add(new Detection(x1,y1,x2,y2,bestS,bestC,Float.NaN, sourceId, null, null));
             }
         }
         return nms(dets, iouThresh);
+    }
+
+    private List<Detection> parseSeg(OnnxValue detVal, OnnxValue protoVal,
+                                     Letterbox lb, int imgW, int imgH) throws OrtException {
+        OnnxTensor detT = (OnnxTensor) detVal;
+        float[] flat = toArray(detT.getFloatBuffer());
+        long[] detShape = detT.getInfo().getShape(); // expect [1,props,N] or [1,N,props]
+
+        ProtoInfo proto = ProtoInfo.from((OnnxTensor) protoVal);
+        int nm = proto.nm;
+
+        int dim1 = (int) detShape[1];
+        int dim2 = (int) detShape[2];
+        boolean colsAreProps = dim1 < dim2; // [1,props,N]
+        int props = colsAreProps ? dim1 : dim2;
+        int clsCount = props - 4 - nm;
+        int N = colsAreProps ? dim2 : dim1;
+
+        if (clsCount <= 0) {
+            return Collections.emptyList();
+        }
+
+        List<Detection> dets = new ArrayList<>(N);
+        if (colsAreProps) {
+            int stride = N; // properties are stored in separate contiguous rows
+            int coeffBase = 4 + clsCount;
+            for (int i = 0; i < N; i++) {
+                float x = flat[i];
+                float y = flat[stride + i];
+                float w = flat[2 * stride + i];
+                float h = flat[3 * stride + i];
+
+                int bestC = -1;
+                float bestS = 0f;
+                for (int c = 0; c < clsCount; c++) {
+                    float s = flat[(4 + c) * stride + i];
+                    if (s > bestS) {
+                        bestS = s;
+                        bestC = c;
+                    }
+                }
+                if (bestS < confThresh) continue;
+
+                float[] coeffs = new float[nm];
+                for (int m = 0; m < nm; m++) {
+                    coeffs[m] = flat[(coeffBase + m) * stride + i];
+                }
+
+                float bx = x - w / 2f, by = y - h / 2f, ex = x + w / 2f, ey = y + h / 2f;
+                float x1 = clamp((bx - lb.padX) / lb.scale, 0, imgW);
+                float y1 = clamp((by - lb.padY) / lb.scale, 0, imgH);
+                float x2 = clamp((ex - lb.padX) / lb.scale, 0, imgW);
+                float y2 = clamp((ey - lb.padY) / lb.scale, 0, imgH);
+                dets.add(new Detection(x1, y1, x2, y2, bestS, bestC,
+                        Float.NaN, sourceId, coeffs, null));
+            }
+        } else {
+            for (int i = 0; i < N; i++) {
+                int base = i * props;
+                float x = flat[base];
+                float y = flat[base + 1];
+                float w = flat[base + 2];
+                float h = flat[base + 3];
+
+                int bestC = -1;
+                float bestS = 0f;
+                for (int c = 0; c < clsCount; c++) {
+                    float s = flat[base + 4 + c];
+                    if (s > bestS) {
+                        bestS = s;
+                        bestC = c;
+                    }
+                }
+                if (bestS < confThresh) continue;
+
+                float[] coeffs = new float[nm];
+                int coeffBase = base + 4 + clsCount;
+                for (int m = 0; m < nm; m++) {
+                    coeffs[m] = flat[coeffBase + m];
+                }
+
+                float bx = x - w / 2f, by = y - h / 2f, ex = x + w / 2f, ey = y + h / 2f;
+                float x1 = clamp((bx - lb.padX) / lb.scale, 0, imgW);
+                float y1 = clamp((by - lb.padY) / lb.scale, 0, imgH);
+                float x2 = clamp((ex - lb.padX) / lb.scale, 0, imgW);
+                float y2 = clamp((ey - lb.padY) / lb.scale, 0, imgH);
+                dets.add(new Detection(x1, y1, x2, y2, bestS, bestC,
+                        Float.NaN, sourceId, coeffs, null));
+            }
+        }
+
+        List<Detection> kept = nms(dets, iouThresh);
+        if (kept.isEmpty()) return kept;
+        List<Detection> out = new ArrayList<>(kept.size());
+        for (Detection d : kept) {
+            Detection.Mask mask = buildMask(d, proto, lb, imgW, imgH);
+            out.add(mask != null ? d.withMask(mask) : d);
+        }
+        return out;
     }
 
     private static float clamp(float v, int lo, int hi){ return Math.max(lo, Math.min(hi, v)); }
@@ -165,6 +321,126 @@ public class ObjectDetector implements AutoCloseable {
             dets.removeIf(b -> b.cls==a.cls && iou(a,b) > iouTh);
         }
         return keep;
+    }
+
+    private static class ProtoInfo {
+        final float[] data;
+        final int nm;
+        final int mh;
+        final int mw;
+        final boolean nchw;
+
+        private ProtoInfo(float[] data, int nm, int mh, int mw, boolean nchw) {
+            this.data = data;
+            this.nm = nm;
+            this.mh = mh;
+            this.mw = mw;
+            this.nchw = nchw;
+        }
+
+        float valueAt(int m, int y, int x) {
+            if (nchw) {
+                return data[(m * mh + y) * mw + x];
+            }
+            return data[(y * mw + x) * nm + m];
+        }
+
+        static ProtoInfo from(OnnxTensor t) throws OrtException {
+            long[] shape = t.getInfo().getShape(); // [1,nm,mh,mw] or [1,mh,mw,nm]
+            if (shape.length != 4) {
+                throw new OrtException("Unexpected proto shape");
+            }
+            int d1 = (int) shape[1];
+            int d2 = (int) shape[2];
+            int d3 = (int) shape[3];
+            float[] data = toArray(t.getFloatBuffer());
+
+            if (d1 <= d2 && d1 <= d3) {
+                return new ProtoInfo(data, d1, d2, d3, true);
+            }
+            if (d3 <= d1 && d3 <= d2) {
+                return new ProtoInfo(data, d3, d1, d2, false);
+            }
+            return new ProtoInfo(data, d1, d2, d3, true);
+        }
+    }
+
+    private Detection.Mask buildMask(Detection det, ProtoInfo proto,
+                                     Letterbox lb, int imgW, int imgH) {
+        if (det.maskCoeffs == null) return null;
+
+        int boxX1 = clampInt((int) Math.floor(det.x1), 0, imgW - 1);
+        int boxY1 = clampInt((int) Math.floor(det.y1), 0, imgH - 1);
+        int boxX2 = clampInt((int) Math.ceil(det.x2), 0, imgW - 1);
+        int boxY2 = clampInt((int) Math.ceil(det.y2), 0, imgH - 1);
+        int boxW = Math.max(1, boxX2 - boxX1);
+        int boxH = Math.max(1, boxY2 - boxY1);
+
+        float x1Lb = det.x1 * lb.scale + lb.padX;
+        float y1Lb = det.y1 * lb.scale + lb.padY;
+        float x2Lb = det.x2 * lb.scale + lb.padX;
+        float y2Lb = det.y2 * lb.scale + lb.padY;
+
+        float sx = proto.mw / (float) inputW;
+        float sy = proto.mh / (float) inputH;
+        int mx1 = clampInt((int) Math.floor(x1Lb * sx), 0, proto.mw - 1);
+        int my1 = clampInt((int) Math.floor(y1Lb * sy), 0, proto.mh - 1);
+        int mx2 = clampInt((int) Math.ceil(x2Lb * sx), 0, proto.mw - 1);
+        int my2 = clampInt((int) Math.ceil(y2Lb * sy), 0, proto.mh - 1);
+
+        int roiW = Math.max(1, mx2 - mx1 + 1);
+        int roiH = Math.max(1, my2 - my1 + 1);
+        float[] roi = new float[roiW * roiH];
+
+        for (int y = 0; y < roiH; y++) {
+            int yy = my1 + y;
+            int row = y * roiW;
+            for (int x = 0; x < roiW; x++) {
+                int xx = mx1 + x;
+                float sum = 0f;
+                for (int m = 0; m < proto.nm; m++) {
+                    sum += det.maskCoeffs[m] * proto.valueAt(m, yy, xx);
+                }
+                roi[row + x] = sigmoid(sum);
+            }
+        }
+
+        byte[] alpha = new byte[boxW * boxH];
+        for (int y = 0; y < boxH; y++) {
+            int syi = Math.min((int) ((y + 0.5f) * roiH / boxH), roiH - 1);
+            int srcRow = syi * roiW;
+            int dstRow = y * boxW;
+            for (int x = 0; x < boxW; x++) {
+                int sxi = Math.min((int) ((x + 0.5f) * roiW / boxW), roiW - 1);
+                float v = roi[srcRow + sxi];
+                if (v >= maskThreshold) {
+                    int a = Math.min(255, Math.max(0, Math.round(v * 255f)));
+                    alpha[dstRow + x] = (byte) a;
+                }
+            }
+        }
+        return new Detection.Mask(alpha, boxW, boxH, boxX1, boxY1);
+    }
+
+    private static float sigmoid(float x) {
+        return (float) (1.0 / (1.0 + Math.exp(-x)));
+    }
+
+    private static int clampInt(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static float[] toArray(FloatBuffer buf) {
+        float[] out = new float[buf.remaining()];
+        buf.get(out);
+        return out;
+    }
+
+    private static int sourceIdFor(String assetName, int fallback) {
+        if (assetName == null) return fallback;
+        String lower = assetName.toLowerCase(Locale.US);
+        if (lower.contains("seg")) return Detection.SOURCE_SEG;
+        return fallback;
     }
 
     @Override public void close() throws Exception {
@@ -195,6 +471,33 @@ public class ObjectDetector implements AutoCloseable {
                 return out.getAbsolutePath();
             } catch (Exception e){
                 throw new RuntimeException(e);
+            }
+        }
+
+        static void deleteCachedAsset(Context ctx, String assetName) {
+            try {
+                File dir = new File(ctx.getFilesDir(), "models");
+                File out = new File(dir, assetName);
+                if (out.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    out.delete();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        static String chooseFirstExistingAsset(Context ctx, String... names) {
+            for (String name : names) {
+                if (assetExists(ctx, name)) return name;
+            }
+            throw new RuntimeException("No model asset found");
+        }
+
+        static boolean assetExists(Context ctx, String assetName) {
+            try (InputStream ignored = ctx.getAssets().open(assetName)) {
+                return true;
+            } catch (Exception e) {
+                return false;
             }
         }
     }

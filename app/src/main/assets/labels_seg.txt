@@ -1,0 +1,4 @@
+Stairs
+crosswalk
+sidewalk
+tree-lined
