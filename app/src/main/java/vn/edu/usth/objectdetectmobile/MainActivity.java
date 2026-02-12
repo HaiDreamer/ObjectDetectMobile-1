@@ -36,10 +36,11 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
+
+import vn.edu.usth.objectdetectmobile.utils.ImageUtils;
 import vn.edu.usth.objectdetectmobile.utils.TTSWarning;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -50,26 +51,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import ai.onnxruntime.OrtException;
 
 
-import android.os.Bundle;
-
 import android.content.Intent;
-import android.net.Uri;
+
 import androidx.appcompat.app.AlertDialog;
-import android.app.DownloadManager;
-import android.os.Environment;
-import android.database.Cursor;
+
 import android.os.Build;
-import android.content.IntentFilter;
 import android.widget.ImageButton;
 import android.os.SystemClock;
-import android.content.Context;
 
 public class MainActivity extends ComponentActivity {
-    // ---- Latency logging ----
+    // Latency logging
     private static final int LAT_LOG_EVERY_N_FRAMES = 15;
     private int latFrameCounter = 0;
     private boolean cameraTsIsRealtime = false;
     private long realtimeMinusUptimeOffsetNs = 0;
+
     // ---------------------------------------------------------------------------------------------
     //  Environment mode (indoor / outdoor)
     // ---------------------------------------------------------------------------------------------
@@ -181,7 +177,6 @@ public class MainActivity extends ComponentActivity {
     // ---------------------------------------------------------------------------------------------
     //  Lifecycle & entry point
     // ---------------------------------------------------------------------------------------------
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -209,7 +204,7 @@ public class MainActivity extends ComponentActivity {
             startPipelines();
         }
 
-        // Lắng nghe thay đổi từ Settings/DepthEstimation
+        // listen change in Settings/DepthEstimation
         prefs.registerOnSharedPreferenceChangeListener(prefListener);
     }
 
@@ -259,7 +254,7 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    // Listener để reload khi Settings thay đổi
+    // Listener to reload when Settings change
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sharedPreferences, key) -> {
         if (PREF_ENV_MODE.equals(key)) {
             String modeName = sharedPreferences.getString(key, EnvMode.INDOOR.name());
@@ -284,7 +279,7 @@ public class MainActivity extends ComponentActivity {
         } else if (PREF_DEPTH_MODE.equals(key)) {
             String mode = sharedPreferences.getString(key, "MONO");
             boolean isStereo = "STEREO".equals(mode);
-            // Chỉ cho phép bật stereo nếu phần cứng hỗ trợ
+            // only allow open stereo if hardware support
             if (isStereo && !stereoPipelineAvailable) {
                 isStereo = false; // Fallback
             }
@@ -336,7 +331,7 @@ public class MainActivity extends ComponentActivity {
         );
         DepthEstimator.setUserScale(calibrationScale);
 
-        // Environment mode (load từ prefs, default = INDOOR)
+        // Environment mode (load from prefs, default = INDOOR)
         String savedEnv = prefs.getString(PREF_ENV_MODE, EnvMode.INDOOR.name());
         try {
             envMode = EnvMode.valueOf(savedEnv);
@@ -344,7 +339,7 @@ public class MainActivity extends ComponentActivity {
             envMode = EnvMode.INDOOR;
         }
 
-        // Sync với UI switch (ON = OUTDOOR, OFF = INDOOR)
+        // Sync with UI switch (ON = OUTDOOR, OFF = INDOOR)
         if (environmentSwitch != null) {
             environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
         }
@@ -372,7 +367,7 @@ public class MainActivity extends ComponentActivity {
         if (settingsButton == null) return;
         settingsButton.setOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, Settings.class);
-            // Truyền khả năng hỗ trợ Stereo sang Settings để Settings truyền tiếp cho DepthEstimation
+            // Pass ability to support Stereo to Settings let Settings pass to DepthEstimation
             intent.putExtra("STEREO_AVAILABLE", stereoPipelineAvailable);
             startActivity(intent);
         });
@@ -409,28 +404,28 @@ public class MainActivity extends ComponentActivity {
 
     private void initBlurSwitch() {
         if (blurSwitch == null) return;
-        // Ẩn Blur switch khỏi Quick Settings theo yêu cầu
+        // Hide Blur switch from Quick Settings
         blurSwitch.setVisibility(View.GONE);
     }
 
     private void initStereoSwitch() {
         if (stereoSwitch == null) return;
-        // Ẩn Stereo switch, chỉ hiển thị trạng thái qua text
+        // Hide Stereo switch, only show status in text
         stereoSwitch.setVisibility(View.GONE);
     }
 
     private void initEnvironmentSwitch() {
         if (environmentSwitch == null) return;
-        // Ẩn Environment switch, chỉ hiển thị trạng thái qua text
+        // Hide Environment switch, show status as text
         environmentSwitch.setVisibility(View.GONE);
-        // Vẫn sync trạng thái checked để logic nội bộ (nếu có dùng) không bị sai
+        // still sync status with checked for logic internal (if use)
         environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
     }
 
     private void switchEnvironment(EnvMode newMode) {
         envMode = newMode;
 
-        // Lưu vào prefs
+        // save in pref
         prefs.edit().putString(PREF_ENV_MODE, envMode.name()).apply();
 
         Toast.makeText(
@@ -439,7 +434,7 @@ public class MainActivity extends ComponentActivity {
                 Toast.LENGTH_SHORT
         ).show();
 
-        // Reload lại detector/depth cho mode mới
+        // Reload detector/depth for new mode
         reloadPipelinesForEnvChange();
     }
 
@@ -451,7 +446,7 @@ public class MainActivity extends ComponentActivity {
         runOnUiThread(() -> {
             Log.i(TAG, "Reloading depth pipeline for envMode = " + envMode);
 
-            // 1) Check if we have ANY model for this mode (asset or downloaded)
+            // 1) Check if have ANY model for this mode (asset or downloaded)
             boolean depthModelOk = DepthEstimator.isModelAvailable(this, envMode);
             if (!depthModelOk) {
                 // No model yet -> show download dialog for this mode
@@ -470,7 +465,7 @@ public class MainActivity extends ComponentActivity {
                 return;
             }
 
-            // 2) We DO have a model (asset or downloaded) -> try to create DepthEstimator
+            // 2) If have a model (asset or downloaded) -> try to create DepthEstimator
             try {
                 DepthEstimator newDepth = new DepthEstimator(this, envMode);
                 depthEstimator = newDepth;
@@ -872,18 +867,20 @@ public class MainActivity extends ComponentActivity {
             }
             if (dets.isEmpty()) dets = null;
 
-            DepthEstimator.DepthMap depthMap = null;
-            if (depthEstimator != null) {
-                if (depthAsyncEnabled) {
-                    depthMap = getCachedDepthMap(SystemClock.elapsedRealtime());
-                } else if (depthFuture != null) {
-                    depthMap = depthFuture.get();
-                }
+            long nowMs = SystemClock.elapsedRealtime();
+            DepthEstimator.DepthMap depthMap = (depthAsyncEnabled)
+                    ? getCachedDepthMap(nowMs)
+                    : (depthFuture != null ? depthFuture.get() : null);
+
+            if (depthEstimator != null && dets != null && !dets.isEmpty() && depthMap == null) {
+                // one synchronous “rescue” run when needed
+                depthMap = maybeRunDepthSync(argb, frameW, frameH, nowMs);
             }
 
             if (depthMap != null && dets != null) {
                 dets = depthEstimator.attachDepth(dets, depthMap);
             }
+
 
             if (stereoFusionEnabled && stereoProcessor != null
                     && depthMap != null && dets != null) {
@@ -954,7 +951,7 @@ public class MainActivity extends ComponentActivity {
             CameraCharacteristics cc =
                     Camera2CameraInfo.extractCameraCharacteristics(camera.getCameraInfo());
 
-            // ---- REQUIRED for correct capture timestamp conversion ----
+            // ---- need for correct capture timestamp conversion ----
             Integer src = cc.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE);
             cameraTsIsRealtime = (src != null
                     && src == CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME);
@@ -1086,7 +1083,7 @@ public class MainActivity extends ComponentActivity {
         String envStr = (envMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
         String blurStr = blurEnabled ? "Blur: On" : "Blur: Off";
         String depthAsyncStr = depthAsyncEnabled ? "Depth Async: On" : "Depth Async: Off";
-        // Hiển thị kết hợp: "Mono • Indoor • Blur: On • Depth Async: On"
+        // Show combination: "Mono • Indoor • Blur: On • Depth Async: On"
         depthModeText.setText(String.format("%s • %s • %s • %s",
                 modeStr, envStr, blurStr, depthAsyncStr));
     }
@@ -1105,7 +1102,7 @@ public class MainActivity extends ComponentActivity {
                 stereoSwitch.setText(R.string.stereo_toggle);
                 stereoSwitch.setEnabled(true);
                 
-                // Đồng bộ trạng thái từ Prefs khi Stereo khả dụng (để khi mở app nó nhớ trạng thái cũ)
+                // Sync status from Prefs when Stereo usable (when open app this still remember old state)
                 String savedMode = prefs.getString(PREF_DEPTH_MODE, "MONO");
                 stereoFusionEnabled = "STEREO".equals(savedMode);
                 stereoSwitch.setChecked(stereoFusionEnabled);
@@ -1192,7 +1189,7 @@ public class MainActivity extends ComponentActivity {
             if (det.source != ObjectDetector.Detection.SOURCE_OD) continue;
             if (Float.isNaN(det.depth) || det.depth <= 0) continue;
 
-            // Your pipeline: det.depth printed as "cm" in OverlayView -> convert to meters
+            // pipeline: det.depth printed as "cm" in OverlayView -> convert to meters
             float distanceMeters = det.depth / 100.0f;
 
             String label = (det.cls >= 0 && det.cls < cachedLabels.size())

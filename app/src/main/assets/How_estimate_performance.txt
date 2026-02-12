@@ -106,7 +106,7 @@ Latency (end-to-end camera to speech feedback)
             cap→TTSbegin: 2251.74 ms
             ttsDets: 3.50
 
-Profileable
+Profileable RAM
     Rebuild + reinstall
         Rebuild: change at main menu -> build
     Run app as "profileable" (low overhead)

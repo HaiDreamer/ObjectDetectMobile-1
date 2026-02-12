@@ -31,10 +31,10 @@ public class DepthEstimation extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.depth_estimation); // tên file XML bạn gửi
+        setContentView(R.layout.depth_estimation); // name file XML u send
         
         prefs = DepthCalibrationHelper.getPrefs(this);
-        // Nhận trạng thái hỗ trợ Stereo từ Settings
+        // receive status support Stereo from Settings
         stereoAvailable = getIntent().getBooleanExtra("STEREO_AVAILABLE", false);
 
         layoutMonocular = findViewById(R.id.layoutMonocular);
@@ -51,89 +51,89 @@ public class DepthEstimation extends AppCompatActivity {
 
         buttonBack.setOnClickListener(v -> finish());
 
-        // Sự kiện chọn model
+        // event choose model
         toggleGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (isChecked) {
                 if (checkedId == R.id.buttonMonocular) {
-                    // Monocular được chọn
+                    // Monocular has chosen
                     buttonMonocular.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#C2FFB5")));
                     buttonMonocular.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#24C400")));
 
-                    // Stereo reset về trắng + viền xám
+                    // Stereo reset to white + gray border
                     buttonStereo.setBackgroundTintList(ColorStateList.valueOf(Color.WHITE));
                     buttonStereo.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#EBEBEB")));
 
-                    // Hiện layout Monocular, ẩn layout Stereo
+                    // show layout Monocular, hide layout Stereo
                     layoutMonocular.setVisibility(View.VISIBLE);
                     layoutStereo.setVisibility(View.GONE);
 
-                    // Cập nhật status Monocular
+                    // update status Monocular
                     updateStatusMonocular();
                     
                     // Lưu Prefs
                     prefs.edit().putString(PREF_DEPTH_MODE, "MONO").apply();
 
                 } else if (checkedId == R.id.buttonStereo) {
-                    // Kiểm tra phần cứng
+                    // check hardware
                     if (!stereoAvailable) {
                         Toast.makeText(this, "Thiết bị không hỗ trợ Stereo Camera", Toast.LENGTH_SHORT).show();
-                        toggleGroup.check(R.id.buttonMonocular); // Revert về Mono
+                        toggleGroup.check(R.id.buttonMonocular); // Revert to Mono
                         return;
                     }
                     
                     buttonStereo.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F7DFA4")));
                     buttonStereo.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#EDA900")));
 
-                    // Monocular reset về trắng + viền xám
+                    // Monocular reset to white and gray border
                     buttonMonocular.setBackgroundTintList(ColorStateList.valueOf(Color.WHITE));
                     buttonMonocular.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#EBEBEB")));
 
-                    // Hiện layout Stereo, ẩn layout Monocular
+                    // show layout Stereo, hide layout Monocular
                     layoutStereo.setVisibility(View.VISIBLE);
                     layoutMonocular.setVisibility(View.GONE);
 
-                    // Reset Indoor/Outdoor khi chuyển sang Stereo
+                    // Reset Indoor/Outdoor when change to Stereo
                     switchIndoor.setChecked(false);
                     switchOutdoor.setChecked(false);
 
-                    // Cập nhật status Stereo
+                    // update status Stereo
                     updateStatusStereo();
                     
-                    // Lưu Prefs
+                    // save Prefs
                     prefs.edit().putString(PREF_DEPTH_MODE, "STEREO").apply();
                 }
             }
         });
 
-        // Sự kiện Indoor/Outdoor
+        // Indoor/Outdoor events
         switchIndoor.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                // Nếu Indoor bật → tắt Outdoor
+                // if Indoor open, turn off Outdoor
                 switchOutdoor.setChecked(false);
             }
-            // Lưu Prefs (Nếu bật -> INDOOR, nếu tắt mà Outdoor cũng tắt -> mặc định INDOOR)
+            // safe Prefs (if open -> INDOOR, if turn off Outdoor also turn off -> default INDOOR)
             if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "INDOOR").apply();
             updateStatusMonocular();
         });
 
         switchOutdoor.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                // Nếu Outdoor bật → tắt Indoor
+                // if Outdoor open, turn off Indoor
                 switchIndoor.setChecked(false);
             }
-            // Lưu Prefs
+            // safe Prefs
             if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "OUTDOOR").apply();
             updateStatusMonocular();
         });
 
-        // Custom màu cho switch
+        // Custom color for switch
         switchIndoor.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
         switchIndoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
         switchOutdoor.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
         switchOutdoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
 
         // --- SETUP UI STATE FROM PREFS ---
-        // Gọi hàm này SAU KHI đã set listener để logic UI trong listener được kích hoạt
+        // Call this function after setting the listener so that the UI logic in the listener is activated
         setupInitialState(toggleGroup, buttonMonocular, buttonStereo);
     }
     
@@ -157,7 +157,7 @@ public class DepthEstimation extends AppCompatActivity {
         }
     }
 
-    // Cập nhật status cho Monocular
+    // update status for Monocular
     private void updateStatusMonocular() {
         StringBuilder mode = new StringBuilder(" Monocular");
         if (switchIndoor.isChecked()) {
@@ -168,7 +168,7 @@ public class DepthEstimation extends AppCompatActivity {
         statusModeMono.setText(mode.toString());
     }
 
-    // Cập nhật status cho Stereo
+    // update status for Stereo
     private void updateStatusStereo() {
         statusModeStereo.setText(" Stereo");
     }

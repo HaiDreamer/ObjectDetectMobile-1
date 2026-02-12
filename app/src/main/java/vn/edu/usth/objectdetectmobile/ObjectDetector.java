@@ -16,6 +16,7 @@ public class ObjectDetector implements AutoCloseable {
         public static final int SOURCE_OD = 0;
         public static final int SOURCE_SEG = 1;
 
+        //segmentation mask
         public static class Mask {
             public final byte[] alpha;
             public final int width;
@@ -75,9 +76,9 @@ public class ObjectDetector implements AutoCloseable {
         String modelAsset = assetName;
         if (modelAsset == null || modelAsset.isEmpty()) {
             modelAsset = Util.chooseFirstExistingAsset(ctx,
-                    "bestseg.onnx",
-                    "best.onnx",
-                    "yolov8m_compatible.onnx");
+                    "best_seg_int8_static_qdq.onnx",         // segment
+                    "best-lan2_int8_static_qdq.onnx",                    // od
+                    "yolov8m_compatible.onnx");     // fallback case
         }
         this.sourceId = sourceIdFor(modelAsset, sourceId);
         String modelPath = Util.cacheAsset(ctx, modelAsset);

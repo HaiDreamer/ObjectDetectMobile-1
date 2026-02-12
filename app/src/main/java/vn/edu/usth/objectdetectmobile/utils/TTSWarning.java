@@ -14,14 +14,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 /*
 * NOW: it handles multiple objects in the sense that it chooses the most dangerous one to speak
 *       (and ignores the rest to avoid spamming).
-* TODO: check this algorithm
-*
 * */
 
 public class TTSWarning {
     private static final String TAG = "TTSWarning";
 
-    // ----- Tuning -----
     private static final long SPEAK_INTERVAL_MS = 5000;
     private static final float MAX_WARNING_DISTANCE = 15.0f;
     private static final float DANGER_DISTANCE = 3.5f;

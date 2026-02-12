@@ -1,4 +1,4 @@
-package vn.edu.usth.objectdetectmobile;
+package vn.edu.usth.objectdetectmobile.utils;
 
 public final class ImageUtils {
 
