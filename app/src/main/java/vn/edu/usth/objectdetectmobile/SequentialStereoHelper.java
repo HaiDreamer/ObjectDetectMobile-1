@@ -30,6 +30,9 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy;
 
 public class SequentialStereoHelper {
 
+    private static final int ANALYSIS_INPUT_SIZE = 640;
+    private static final int BLUR_INPUT_SIZE = 360;
+
     private SequentialStereoHelper() {}
 
     // Result of the whole dual-shot run
@@ -179,12 +182,9 @@ public class SequentialStereoHelper {
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setResolutionSelector(
                             new ResolutionSelector.Builder()
-                                    .setAspectRatioStrategy(
-                                            AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
-                                    )
                                     .setResolutionStrategy(
                                             new ResolutionStrategy(
-                                                    new Size(360, 360),
+                                                    new Size(ANALYSIS_INPUT_SIZE, ANALYSIS_INPUT_SIZE),
                                                     ResolutionStrategy
                                                             .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                                             )
@@ -209,7 +209,7 @@ public class SequentialStereoHelper {
                     }
 
                     int[] detectorInput = (blurEnabled && blurRadius > 0)
-                            ? ImageUtils.boxBlur(argb, frameW, frameH, blurRadius)
+                            ? ImageUtils.blurAtSize(argb, frameW, frameH, BLUR_INPUT_SIZE, blurRadius)
                             : argb;
 
                     List<ObjectDetector.Detection> dets = new ArrayList<>();

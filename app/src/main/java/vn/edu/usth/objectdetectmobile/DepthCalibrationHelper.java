@@ -13,8 +13,8 @@ import java.util.Locale;
 
 public final class DepthCalibrationHelper {
 
-    private static final float CALIB_MIN = 0.5f;
-    private static final float CALIB_MAX = 2.5f;
+    private static final float CALIB_MIN = 0.25f;
+    private static final float CALIB_MAX = 8.0f;
     private static final int CALIB_PROGRESS_MAX = 200;
     private static final String PREFS_NAME = "depth_calibration_prefs";
     private static final String PREF_KEY_PREFIX = "depth_calibration_scale_";

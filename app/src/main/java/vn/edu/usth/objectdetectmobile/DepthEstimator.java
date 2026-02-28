@@ -50,9 +50,9 @@ public class DepthEstimator implements AutoCloseable {
 
     private static final float NEAR_CM = 20f;  // clamp for extreme near noise
     private static final float FAR_CM = 200f;  // clamp for extreme far noise
-    private static final float BASE_SCALE = 0.33f;
     private static final float MIN_USER_SCALE = 0.25f;
-    private static final float MAX_USER_SCALE = 4f;
+    private static final float MAX_USER_SCALE = 8f;
+    private static final float MAX_OUTPUT_CM = 8000f; // 80m display cap
     private static volatile float userScale = 1f;
 
     // Các giá trị raw trung bình bạn đo được (ví dụ giữ vật thể ở 30cm và 200cm, log raw rồi sửa ở đây)
@@ -60,13 +60,14 @@ public class DepthEstimator implements AutoCloseable {
     // private static final float[] CAL_CM  = {20f, 40f, 50f, 75f, 100f, 150f, 200f, 300f, 400f, 500f};
     // private static final float[] CAL_RAW = {3.22f, 2.32f, 1.95f, 1.72f, 1.59f, 1.49f, 1.232f, 1.0f, 0.7f, 0.3f};
 
-    // Depth Anything v2 metric outputs depth in meters; convert directly to centimeters.
+    // Depth model output is metric depth (meters), convert to centimeters.
+    // Calibration works as a pure multiplier around the model-native 1x scale.
     private static float rawToCentimeters(float raw) {
         if (Float.isNaN(raw)) return Float.NaN;
-        float cm = raw * 100f * BASE_SCALE;
+        float cm = raw * 100f;
         cm = applyCalibration(cm);
         // Optional clamp to avoid extreme outliers from propagating.
-        return Math.max(0f, Math.min(cm, 2000f));
+        return Math.max(0f, Math.min(cm, MAX_OUTPUT_CM));
     }
 
     public static void setUserScale(float scale) {
@@ -97,7 +98,7 @@ public class DepthEstimator implements AutoCloseable {
     private final float[] std = {0.229f, 0.224f, 0.225f};
 
     public DepthEstimator(@NonNull Context ctx) throws OrtException {
-        this(ctx, EnvMode.INDOOR);
+        this(ctx, EnvMode.OUTDOOR);
     }
 
     public DepthEstimator(@NonNull Context ctx, EnvMode mode) throws OrtException {
@@ -106,6 +107,7 @@ public class DepthEstimator implements AutoCloseable {
         sessionOptions = new OrtSession.SessionOptions();
         session = env.createSession(modelPath, sessionOptions);
         inputName = session.getInputInfo().keySet().iterator().next();
+        Log.i(TAG, "Loaded depth model: " + modelPath);
     }
 
     public static boolean isModelAvailable(@NonNull Context ctx, EnvMode mode) {
@@ -141,9 +143,29 @@ public class DepthEstimator implements AutoCloseable {
 
     private static String[] getCandidateNames(EnvMode mode) {
         if (mode == EnvMode.OUTDOOR) {
-            return new String[]{OUTDOOR_MODEL_DOWNLOAD, OUTDOOR_MODEL_ASSET};
+            return new String[]{
+                    int8Name(OUTDOOR_MODEL_DOWNLOAD),
+                    OUTDOOR_MODEL_DOWNLOAD,
+                    int8Name(OUTDOOR_MODEL_ASSET),
+                    OUTDOOR_MODEL_ASSET
+            };
         }
-        return new String[]{INDOOR_MODEL_DOWNLOAD, INDOOR_MODEL_ASSET};
+        return new String[]{
+                int8Name(INDOOR_MODEL_DOWNLOAD),
+                INDOOR_MODEL_DOWNLOAD,
+                int8Name(INDOOR_MODEL_ASSET),
+                INDOOR_MODEL_ASSET
+        };
+    }
+
+    private static String int8Name(String name) {
+        if (name == null) return null;
+        String lower = name.toLowerCase(Locale.US);
+        if (lower.endsWith("_int8.onnx")) return name;
+        if (lower.endsWith(".onnx")) {
+            return name.substring(0, name.length() - 5) + "_int8.onnx";
+        }
+        return name + "_int8";
     }
 
     private static File getDownloadFile(Context ctx, String fileName) {

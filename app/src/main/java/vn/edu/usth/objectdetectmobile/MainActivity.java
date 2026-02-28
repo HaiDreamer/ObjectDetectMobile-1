@@ -86,7 +86,7 @@ public class MainActivity extends ComponentActivity {
     private static final String PREF_DEPTH_ASYNC = "pref_depth_async";
     private static final boolean DEFAULT_DEPTH_ASYNC = true;
 
-    private EnvMode envMode = EnvMode.INDOOR;  // default = Indoor
+    private EnvMode envMode = EnvMode.OUTDOOR;  // default = Outdoor
     private SwitchMaterial environmentSwitch;
     // ---------------------------------------------------------------------------------------------
     //  Constants
@@ -95,12 +95,15 @@ public class MainActivity extends ComponentActivity {
     private static final String TAG = "MainActivity";
 
     // Depth throttling / cache
-    private static final short DEPTH_INTERVAL_MS = 1500;
+    // Set interval to 0 to disable depth throttling and run depth continuously.
+    private static final short DEPTH_INTERVAL_MS = 0;
     private static final short DEPTH_CACHE_MS = 3000;
 
     // Input blur
     private static final boolean ENABLE_INPUT_BLUR = true;
     private static final int BLUR_RADIUS = 1; // 1 => kernel 3x3
+    private static final int ANALYSIS_INPUT_SIZE = 640;
+    private static final int BLUR_INPUT_SIZE = 360;
 
     // ---------------------------------------------------------------------------------------------
     //  UI views
@@ -262,7 +265,7 @@ public class MainActivity extends ComponentActivity {
     // Listener để reload khi Settings thay đổi
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sharedPreferences, key) -> {
         if (PREF_ENV_MODE.equals(key)) {
-            String modeName = sharedPreferences.getString(key, EnvMode.INDOOR.name());
+            String modeName = sharedPreferences.getString(key, EnvMode.OUTDOOR.name());
             EnvMode newMode = EnvMode.valueOf(modeName);
             if (newMode != envMode) {
                 envMode = newMode;
@@ -329,19 +332,16 @@ public class MainActivity extends ComponentActivity {
 
         // Calibration
         calibrationPrefKey = DepthCalibrationHelper.buildCalibrationKey(this);
-        calibrationScale = DepthCalibrationHelper.loadSavedCalibrationScale(
-                prefs,
-                calibrationPrefKey,
-                DepthEstimator.getUserScale()
-        );
+        calibrationScale = 1f;
+        DepthCalibrationHelper.saveCalibration(prefs, calibrationPrefKey, calibrationScale);
         DepthEstimator.setUserScale(calibrationScale);
 
-        // Environment mode (load từ prefs, default = INDOOR)
-        String savedEnv = prefs.getString(PREF_ENV_MODE, EnvMode.INDOOR.name());
+        // Environment mode (load from prefs, default = OUTDOOR)
+        String savedEnv = prefs.getString(PREF_ENV_MODE, EnvMode.OUTDOOR.name());
         try {
             envMode = EnvMode.valueOf(savedEnv);
         } catch (IllegalArgumentException e) {
-            envMode = EnvMode.INDOOR;
+            envMode = EnvMode.OUTDOOR;
         }
 
         // Sync với UI switch (ON = OUTDOOR, OFF = INDOOR)
@@ -552,23 +552,36 @@ public class MainActivity extends ComponentActivity {
 
     private void initDetectorAndDepth() {
         try {
-            detectorOd = new ObjectDetector(this, "best.onnx", ObjectDetector.Detection.SOURCE_OD);
+            detectorOd = new ObjectDetector(this, "best_OD_nano.onnx", ObjectDetector.Detection.SOURCE_OD);
         } catch (Throwable e) {
             detectorOd = null;
-            Log.w(TAG, "OD detector init failed (best.onnx), trying fallback", e);
+            Log.w(TAG, "OD detector init failed (best_OD_nano.onnx), trying fallback", e);
             try {
-                detectorOd = new ObjectDetector(this, "yolov8m_compatible.onnx",
+                detectorOd = new ObjectDetector(this, "best.onnx",
                         ObjectDetector.Detection.SOURCE_OD);
-            } catch (Throwable fallbackErr) {
+            } catch (Throwable secondErr) {
                 detectorOd = null;
-                Log.e(TAG, "OD detector init failed (fallback)", fallbackErr);
+                Log.w(TAG, "OD detector init failed (best.onnx), trying fallback 2", secondErr);
+                try {
+                    detectorOd = new ObjectDetector(this, "yolov8m_compatible.onnx",
+                        ObjectDetector.Detection.SOURCE_OD);
+                } catch (Throwable fallbackErr) {
+                    detectorOd = null;
+                    Log.e(TAG, "OD detector init failed (fallback)", fallbackErr);
+                }
             }
         }
         try {
-            detectorSeg = new ObjectDetector(this, "bestseg.onnx", ObjectDetector.Detection.SOURCE_SEG);
+            detectorSeg = new ObjectDetector(this, "best_seg_nano.onnx", ObjectDetector.Detection.SOURCE_SEG);
         } catch (Throwable e) {
             detectorSeg = null;
-            Log.e(TAG, "Seg detector init failed", e);
+            Log.w(TAG, "Seg detector init failed (best_seg_nano.onnx), trying fallback", e);
+            try {
+                detectorSeg = new ObjectDetector(this, "bestseg.onnx", ObjectDetector.Detection.SOURCE_SEG);
+            } catch (Throwable fallbackErr) {
+                detectorSeg = null;
+                Log.e(TAG, "Seg detector init failed (fallback)", fallbackErr);
+            }
         }
         if (detectorOd == null && detectorSeg == null) {
             Toast.makeText(this, "Detector load failed: no model available",
@@ -662,12 +675,9 @@ public class MainActivity extends ComponentActivity {
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setResolutionSelector(
                             new ResolutionSelector.Builder()
-                                    .setAspectRatioStrategy(
-                                            AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
-                                    )
                                     .setResolutionStrategy(
                                             new ResolutionStrategy(
-                                                    new Size(360, 360),
+                                                    new Size(ANALYSIS_INPUT_SIZE, ANALYSIS_INPUT_SIZE),
                                                     ResolutionStrategy
                                                             .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                                             )
@@ -797,7 +807,7 @@ public class MainActivity extends ComponentActivity {
             }
 
             int[] detectorInput = (blurEnabled && BLUR_RADIUS > 0)
-                    ? ImageUtils.boxBlur(argb, frameW, frameH, BLUR_RADIUS)
+                    ? ImageUtils.blurAtSize(argb, frameW, frameH, BLUR_INPUT_SIZE, BLUR_RADIUS)
                     : argb;
 
             // Run YOLO + depth in parallel on inferenceExec
