@@ -1,6 +1,7 @@
 package vn.edu.usth.objectdetectmobile;
 
 import android.content.Context;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import ai.onnxruntime.*;
 
@@ -12,11 +13,11 @@ import java.util.*;
 import static java.lang.Math.*;
 
 public class ObjectDetector implements AutoCloseable {
+    private static final String TAG = "ObjectDetector";
     public static class Detection {
         public static final int SOURCE_OD = 0;
         public static final int SOURCE_SEG = 1;
 
-        //segmentation mask
         public static class Mask {
             public final byte[] alpha;
             public final int width;
@@ -73,27 +74,54 @@ public class ObjectDetector implements AutoCloseable {
 
     public ObjectDetector(@NonNull Context ctx, String assetName, int sourceId) throws OrtException {
         env = OrtEnvironment.getEnvironment();
-        String modelAsset = assetName;
-        if (modelAsset == null || modelAsset.isEmpty()) {
-            modelAsset = Util.chooseFirstExistingAsset(ctx,
-                    "best_seg_int8_static_qdq.onnx",         // segment
-                    "best-lan2_int8_static_qdq.onnx",                    // od
-                    "yolov8m_compatible.onnx");     // fallback case
+        List<String> modelCandidates;
+        if (assetName == null || assetName.isEmpty()) {
+            modelCandidates = Util.buildModelCandidates(ctx,
+                    "bestseg.onnx",
+                    "best.onnx",
+                    "yolov8m_compatible.onnx");
+        } else {
+            modelCandidates = Util.buildModelCandidates(ctx, assetName);
         }
-        this.sourceId = sourceIdFor(modelAsset, sourceId);
-        String modelPath = Util.cacheAsset(ctx, modelAsset);
         OrtSession.SessionOptions so = new OrtSession.SessionOptions();
         OrtSession created;
-        try {
-            created = env.createSession(modelPath, so);
-        } catch (OrtException firstErr) {
-            // Cached file may be truncated; delete and retry once.
-            Util.deleteCachedAsset(ctx, modelAsset);
-            modelPath = Util.cacheAsset(ctx, modelAsset);
-            created = env.createSession(modelPath, so);
+        String selectedAsset = null;
+        OrtException lastOrtError = null;
+        RuntimeException lastRuntimeError = null;
+
+        created = null;
+        for (String candidate : modelCandidates) {
+            if (!Util.assetExists(ctx, candidate)) continue;
+            String modelPath;
+            try {
+                modelPath = Util.cacheAsset(ctx, candidate);
+                try {
+                    created = env.createSession(modelPath, so);
+                } catch (OrtException firstErr) {
+                    // Cached file may be truncated; delete and retry once.
+                    Util.deleteCachedAsset(ctx, candidate);
+                    modelPath = Util.cacheAsset(ctx, candidate);
+                    created = env.createSession(modelPath, so);
+                }
+                selectedAsset = candidate;
+                break;
+            } catch (OrtException e) {
+                lastOrtError = e;
+            } catch (RuntimeException e) {
+                lastRuntimeError = e;
+            }
         }
+
+        if (created == null) {
+            if (lastOrtError != null) throw lastOrtError;
+            if (lastRuntimeError != null) throw lastRuntimeError;
+            throw new RuntimeException("No model asset found");
+        }
+
+        this.sourceId = sourceIdFor(selectedAsset, sourceId);
         session = created;
         inputName = session.getInputInfo().keySet().iterator().next();
+        Log.i(TAG, "Loaded detector model: " + selectedAsset);
     }
 
     public List<Detection> detect(int[] argb, int srcW, int srcH) throws OrtException {
@@ -489,9 +517,24 @@ public class ObjectDetector implements AutoCloseable {
 
         static String chooseFirstExistingAsset(Context ctx, String... names) {
             for (String name : names) {
+                String preferred = preferInt8Asset(ctx, name);
+                if (assetExists(ctx, preferred)) return preferred;
                 if (assetExists(ctx, name)) return name;
             }
             throw new RuntimeException("No model asset found");
+        }
+
+        static List<String> buildModelCandidates(Context ctx, String... names) {
+            LinkedHashSet<String> out = new LinkedHashSet<>();
+            for (String name : names) {
+                if (name == null || name.isEmpty()) continue;
+                String preferred = preferInt8Asset(ctx, name);
+                out.add(preferred);
+                if (!preferred.equals(name)) {
+                    out.add(name);
+                }
+            }
+            return new ArrayList<>(out);
         }
 
         static boolean assetExists(Context ctx, String assetName) {
@@ -500,6 +543,17 @@ public class ObjectDetector implements AutoCloseable {
             } catch (Exception e) {
                 return false;
             }
+        }
+
+        static String preferInt8Asset(Context ctx, String assetName) {
+            if (assetName == null) return null;
+            String lower = assetName.toLowerCase(Locale.US);
+            if (lower.endsWith("_int8.onnx")) return assetName;
+            if (lower.endsWith(".onnx")) {
+                String int8Name = assetName.substring(0, assetName.length() - 5) + "_int8.onnx";
+                if (assetExists(ctx, int8Name)) return int8Name;
+            }
+            return assetName;
         }
     }
 }

@@ -147,7 +147,7 @@ public class DepthEstimation extends AppCompatActivity {
         }
         
         // 2. Load Env Mode (Indoor/Outdoor)
-        String envMode = prefs.getString(PREF_ENV_MODE, "INDOOR");
+        String envMode = prefs.getString(PREF_ENV_MODE, "OUTDOOR");
         if ("OUTDOOR".equals(envMode)) {
             switchOutdoor.setChecked(true);
             switchIndoor.setChecked(false);
