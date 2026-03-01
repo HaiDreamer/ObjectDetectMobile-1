@@ -36,6 +36,8 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
+
+import vn.edu.usth.objectdetectmobile.utils.ImageUtils;
 import vn.edu.usth.objectdetectmobile.utils.TTSWarning;
 
 import java.util.ArrayList;
@@ -98,6 +100,10 @@ public class MainActivity extends ComponentActivity {
     // Set interval to 0 to disable depth throttling and run depth continuously.
     private static final short DEPTH_INTERVAL_MS = 0;
     private static final short DEPTH_CACHE_MS = 3000;
+
+    // simulation
+    private static final long SIM_INTERVAL_MS = 3500;
+    private long lastProcessedStartMs = 0;
 
     // Input blur
     private static final boolean ENABLE_INPUT_BLUR = true;
@@ -774,6 +780,16 @@ public class MainActivity extends ComponentActivity {
             }
 
             if (!shouldProcess) return;
+
+            // ---- THROTTLE simulation: only process one frame per 3.5s (for realtime stream) ----
+            if (realtimeEnabled && !singleShotFrame) {
+                long nowMs = SystemClock.elapsedRealtime();
+                if (nowMs - lastProcessedStartMs < SIM_INTERVAL_MS) {
+                    return; // will still close() in finally
+                }
+                lastProcessedStartMs = nowMs;
+            }
+            // -----------------------------------------------------------------------
 
             // ---- Capture timestamp (convert to nanoTime base) ----
             long imgTsNs = image.getImageInfo().getTimestamp();   // camera timestamp
