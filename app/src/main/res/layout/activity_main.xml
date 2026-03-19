@@ -1,6 +1,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -9,31 +10,37 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:implementationMode="performance"
-        app:scaleType="fitCenter" />
+        app:scaleType="fitCenter" >
 
     <vn.edu.usth.objectdetectmobile.OverlayView
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clickable="false"/>
+        android:clickable="false" />
+</androidx.camera.view.PreviewView>
 
     <ImageButton
         android:id="@+id/buttonSettings"
         android:layout_width="80dp"
         android:layout_height="80dp"
-        android:layout_margin="50dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="50dp"
         android:background="@android:color/transparent"
         android:backgroundTint="@android:color/white"
         android:contentDescription="settings"
         android:src="@drawable/ic_settings"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toEndOf="@id/buttonDetectOnce" />
+        app:layout_constraintStart_toEndOf="@id/buttonDetectOnce"
+        app:layout_constraintEnd_toStartOf="@id/buttonToggleSettings"
+        app:layout_constraintHorizontal_bias="0.2" />
 
     <ImageButton
         android:id="@+id/buttonToggleSettings"
         android:layout_width="80dp"
         android:layout_height="80dp"
-        android:layout_margin="50dp"
+        android:layout_marginEnd="40dp"
+        android:layout_marginBottom="50dp"
         android:background="@android:color/transparent"
         android:backgroundTint="@android:color/white"
         android:src="@drawable/ic_quickset"
@@ -139,13 +146,15 @@
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonDetectOnce"
         style="?attr/materialButtonOutlinedStyle"
-        android:layout_width="100dp"
+        android:layout_width="wrap_content"
         android:layout_height="80dp"
-        android:layout_margin="50dp"
-        android:singleLine="true"
-        android:ellipsize="none"
+        android:minWidth="120dp"
+        android:layout_marginStart="50dp"
+        android:layout_marginBottom="50dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
         android:text="@string/single_detect"
-        android:textSize="18dp"
+        android:textSize="18sp"
         android:textColor="@color/black"
         android:backgroundTint="@color/white"
         android:visibility="gone"
