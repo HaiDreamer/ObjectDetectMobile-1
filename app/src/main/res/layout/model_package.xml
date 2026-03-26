@@ -117,19 +117,7 @@
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
-                        android:layout_marginBottom="20dp"
-                        app:layout_constraintTop_toTopOf="@id/tick1"
-                        app:layout_constraintBottom_toBottomOf="@id/tick1"
-                        app:layout_constraintStart_toEndOf="@id/tick1"
-                        android:layout_marginStart="12dp"/>
-                    <TextView
-                        android:id="@+id/textNote1"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Low accuracy. Small model"
-                        android:textSize="15sp"
-                        android:textColor="@android:color/black"
-                        android:layout_marginTop="20dp"
+                        android:layout_marginBottom="0dp"
                         app:layout_constraintTop_toTopOf="@id/tick1"
                         app:layout_constraintBottom_toBottomOf="@id/tick1"
                         app:layout_constraintStart_toEndOf="@id/tick1"
@@ -179,23 +167,12 @@
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
-                        android:layout_marginBottom="20dp"
+                        android:layout_marginBottom="0dp"
                         app:layout_constraintTop_toTopOf="@id/tick2"
                         app:layout_constraintBottom_toBottomOf="@id/tick2"
                         app:layout_constraintStart_toEndOf="@id/tick2"
                         android:layout_marginStart="12dp"/>
-                    <TextView
-                        android:id="@+id/textNote2"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Low accuracy. Small model"
-                        android:textSize="15sp"
-                        android:textColor="@android:color/black"
-                        android:layout_marginTop="20dp"
-                        app:layout_constraintTop_toTopOf="@id/tick2"
-                        app:layout_constraintBottom_toBottomOf="@id/tick2"
-                        app:layout_constraintStart_toEndOf="@id/tick2"
-                        android:layout_marginStart="12dp"/>
+
                     <ImageView
                         android:id="@+id/bin2"
                         android:layout_width="48dp"
@@ -290,23 +267,12 @@
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
-                        android:layout_marginBottom="20dp"
+                        android:layout_marginBottom="0dp"
                         app:layout_constraintTop_toTopOf="@id/cloud1"
                         app:layout_constraintBottom_toBottomOf="@id/cloud1"
                         app:layout_constraintStart_toEndOf="@id/cloud1"
                         android:layout_marginStart="12dp"/>
-                    <TextView
-                        android:id="@+id/textNote3"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Low accuracy. Small model"
-                        android:textSize="15sp"
-                        android:textColor="@android:color/black"
-                        android:layout_marginTop="20dp"
-                        app:layout_constraintTop_toTopOf="@id/cloud1"
-                        app:layout_constraintBottom_toBottomOf="@id/cloud1"
-                        app:layout_constraintStart_toEndOf="@id/cloud1"
-                        android:layout_marginStart="12dp"/>
+
                     <ImageView
                         android:id="@+id/down1"
                         android:layout_width="48dp"
@@ -352,23 +318,12 @@
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
-                        android:layout_marginBottom="20dp"
+                        android:layout_marginBottom="0dp"
                         app:layout_constraintTop_toTopOf="@id/cloud2"
                         app:layout_constraintBottom_toBottomOf="@id/cloud2"
                         app:layout_constraintStart_toEndOf="@id/cloud2"
                         android:layout_marginStart="12dp"/>
-                    <TextView
-                        android:id="@+id/textNote4"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Low accuracy. Small model"
-                        android:textSize="15sp"
-                        android:textColor="@android:color/black"
-                        android:layout_marginTop="20dp"
-                        app:layout_constraintTop_toTopOf="@id/cloud2"
-                        app:layout_constraintBottom_toBottomOf="@id/cloud2"
-                        app:layout_constraintStart_toEndOf="@id/cloud2"
-                        android:layout_marginStart="12dp"/>
+
                     <ImageView
                         android:id="@+id/down2"
                         android:layout_width="48dp"
