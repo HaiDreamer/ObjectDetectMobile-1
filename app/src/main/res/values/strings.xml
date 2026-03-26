@@ -26,6 +26,9 @@
     <string name="zoom_value_default">Zoom x1.00</string>
     <string name="dual_shot">Dual shot</string>
     <string name="zoom_not_supported">Zoom not suppported\n</string>
-    <string name="environment_toggle">Outdoor mode</string>
+    <string name="environment_toggle">FarFocus mode</string>
     <string name="depth_async_toggle">Depth Async</string>
+
+    <string name="env_far_focus">FarFocus</string>
+    <string name="env_near_focus">NearFocus</string>
 </resources>

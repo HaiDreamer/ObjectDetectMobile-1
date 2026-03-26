@@ -73,11 +73,11 @@ public class MainActivity extends ComponentActivity {
     private boolean cameraTsIsRealtime = false;
     private long realtimeMinusUptimeOffsetNs = 0;
     // ---------------------------------------------------------------------------------------------
-    //  Environment mode (indoor / outdoor)
+    //  Environment mode (NearFocus / FarFocus)
     // ---------------------------------------------------------------------------------------------
     public enum EnvMode {
-        INDOOR,
-        OUTDOOR
+        NearFocus,
+        FarFocus
     }
     // Depth model prefs live in a separate file
     private static final String DEPTH_MODEL_PREFS = "depth_models";
@@ -88,7 +88,7 @@ public class MainActivity extends ComponentActivity {
     private static final String PREF_DEPTH_ASYNC = "pref_depth_async";
     private static final boolean DEFAULT_DEPTH_ASYNC = true;
 
-    private EnvMode envMode = EnvMode.OUTDOOR;  // default = Outdoor
+    private EnvMode envMode = EnvMode.FarFocus;  // default = FarFocus
     private SwitchMaterial environmentSwitch;
     // ---------------------------------------------------------------------------------------------
     //  Constants
@@ -271,12 +271,12 @@ public class MainActivity extends ComponentActivity {
     // Listener để reload khi Settings thay đổi
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sharedPreferences, key) -> {
         if (PREF_ENV_MODE.equals(key)) {
-            String modeName = sharedPreferences.getString(key, EnvMode.OUTDOOR.name());
+            String modeName = sharedPreferences.getString(key, EnvMode.FarFocus.name());
             EnvMode newMode = EnvMode.valueOf(modeName);
             if (newMode != envMode) {
                 envMode = newMode;
                 runOnUiThread(() -> {
-                    if (environmentSwitch != null) environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
+                    if (environmentSwitch != null) environmentSwitch.setChecked(envMode == EnvMode.FarFocus);
                     reloadPipelinesForEnvChange();
                     updateDepthModeLabel();
                 });
@@ -342,17 +342,17 @@ public class MainActivity extends ComponentActivity {
         DepthCalibrationHelper.saveCalibration(prefs, calibrationPrefKey, calibrationScale);
         DepthEstimator.setUserScale(calibrationScale);
 
-        // Environment mode (load from prefs, default = OUTDOOR)
-        String savedEnv = prefs.getString(PREF_ENV_MODE, EnvMode.OUTDOOR.name());
+        // Environment mode (load from prefs, default = FarFocus)
+        String savedEnv = prefs.getString(PREF_ENV_MODE, EnvMode.FarFocus.name());
         try {
             envMode = EnvMode.valueOf(savedEnv);
         } catch (IllegalArgumentException e) {
-            envMode = EnvMode.OUTDOOR;
+            envMode = EnvMode.FarFocus;
         }
 
-        // Sync với UI switch (ON = OUTDOOR, OFF = INDOOR)
+        // Sync với UI switch (ON = FarFocus, OFF = NearFocus)
         if (environmentSwitch != null) {
-            environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
+            environmentSwitch.setChecked(envMode == EnvMode.FarFocus);
         }
 
         // Sync Blur
@@ -430,7 +430,7 @@ public class MainActivity extends ComponentActivity {
         // Ẩn Environment switch, chỉ hiển thị trạng thái qua text
         environmentSwitch.setVisibility(View.GONE);
         // Vẫn sync trạng thái checked để logic nội bộ (nếu có dùng) không bị sai
-        environmentSwitch.setChecked(envMode == EnvMode.OUTDOOR);
+        environmentSwitch.setChecked(envMode == EnvMode.FarFocus);
     }
 
     private void switchEnvironment(EnvMode newMode) {
@@ -441,7 +441,7 @@ public class MainActivity extends ComponentActivity {
 
         Toast.makeText(
                 this,
-                "Environment: " + (envMode == EnvMode.OUTDOOR ? "Outdoor" : "Indoor"),
+                "Environment: " + (envMode == EnvMode.FarFocus ? "FarFocus" : "NearFocus"),
                 Toast.LENGTH_SHORT
         ).show();
 
@@ -490,7 +490,7 @@ public class MainActivity extends ComponentActivity {
                 Toast.makeText(
                         this,
                         "Depth model loaded for " +
-                                (envMode == EnvMode.OUTDOOR ? "Outdoor" : "Indoor"),
+                                (envMode == EnvMode.FarFocus ? "FarFocus" : "NearFocus"),
                         Toast.LENGTH_SHORT
                 ).show();
 
@@ -505,7 +505,7 @@ public class MainActivity extends ComponentActivity {
                 Toast.makeText(
                         this,
                         "Failed to init depth for " +
-                                (envMode == EnvMode.OUTDOOR ? "Outdoor" : "Indoor"),
+                                (envMode == EnvMode.FarFocus ? "FarFocus" : "NearFocus"),
                         Toast.LENGTH_LONG
                 ).show();
             }
@@ -627,7 +627,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void showMissingDepthModelDialog(EnvMode targetMode) {
-        String modeLabel = (targetMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
+        String modeLabel = (targetMode == EnvMode.FarFocus) ? "FarFocus" : "NearFocus";
 
         new AlertDialog.Builder(this)
                 .setTitle("Depth model missing")
@@ -1109,10 +1109,10 @@ public class MainActivity extends ComponentActivity {
                 && stereoPipelineAvailable
                 && stereoProcessor != null;
         String modeStr = getString(stereoActive ? R.string.depth_mode_stereo : R.string.depth_mode_mono);
-        String envStr = (envMode == EnvMode.OUTDOOR) ? "Outdoor" : "Indoor";
+        String envStr = (envMode == EnvMode.FarFocus) ? "FarFocus" : "NearFocus";
         String blurStr = blurEnabled ? "Blur: On" : "Blur: Off";
         String depthAsyncStr = depthAsyncEnabled ? "Depth Async: On" : "Depth Async: Off";
-        // Hiển thị kết hợp: "Mono • Indoor • Blur: On • Depth Async: On"
+        // Hiển thị kết hợp: "Mono • NearFocus • Blur: On • Depth Async: On"
         depthModeText.setText(String.format("%s • %s • %s • %s",
                 modeStr, envStr, blurStr, depthAsyncStr));
     }

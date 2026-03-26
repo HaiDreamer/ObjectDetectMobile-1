@@ -28,10 +28,10 @@ import ai.onnxruntime.OrtSession;
  */
 public class DepthEstimator implements AutoCloseable {
     private static final String TAG = "DepthEstimator";
-    private static final String INDOOR_MODEL_ASSET = "depth_anything_v2_metric_hypersim_vits.onnx";
-    private static final String INDOOR_MODEL_DOWNLOAD = "depth_anything_v2_metric_hypersim_vits_fp16.onnx";
-    private static final String OUTDOOR_MODEL_ASSET = "depth_anything_v2_metric_vkitti_vits.onnx";
-    private static final String OUTDOOR_MODEL_DOWNLOAD = "depth_anything_v2_metric_vkitti_vits_fp16.onnx";
+    private static final String NearFocus_MODEL_ASSET = "depth_anything_v2_metric_hypersim_vits.onnx";
+    private static final String NearFocus_MODEL_DOWNLOAD = "depth_anything_v2_metric_hypersim_vits_fp16.onnx";
+    private static final String FarFocus_MODEL_ASSET = "depth_anything_v2_metric_vkitti_vits.onnx";
+    private static final String FarFocus_MODEL_DOWNLOAD = "depth_anything_v2_metric_vkitti_vits_fp16.onnx";
     private static final boolean LOG_RAW_DEPTH = true;
 
     public static class DepthMap {
@@ -98,7 +98,7 @@ public class DepthEstimator implements AutoCloseable {
     private final float[] std = {0.229f, 0.224f, 0.225f};
 
     public DepthEstimator(@NonNull Context ctx) throws OrtException {
-        this(ctx, EnvMode.OUTDOOR);
+        this(ctx, EnvMode.FarFocus);
     }
 
     public DepthEstimator(@NonNull Context ctx, EnvMode mode) throws OrtException {
@@ -142,19 +142,19 @@ public class DepthEstimator implements AutoCloseable {
     }
 
     private static String[] getCandidateNames(EnvMode mode) {
-        if (mode == EnvMode.OUTDOOR) {
+        if (mode == EnvMode.FarFocus) {
             return new String[]{
-                    int8Name(OUTDOOR_MODEL_DOWNLOAD),
-                    OUTDOOR_MODEL_DOWNLOAD,
-                    int8Name(OUTDOOR_MODEL_ASSET),
-                    OUTDOOR_MODEL_ASSET
+                    int8Name(FarFocus_MODEL_DOWNLOAD),
+                    FarFocus_MODEL_DOWNLOAD,
+                    int8Name(FarFocus_MODEL_ASSET),
+                    FarFocus_MODEL_ASSET
             };
         }
         return new String[]{
-                int8Name(INDOOR_MODEL_DOWNLOAD),
-                INDOOR_MODEL_DOWNLOAD,
-                int8Name(INDOOR_MODEL_ASSET),
-                INDOOR_MODEL_ASSET
+                int8Name(NearFocus_MODEL_DOWNLOAD),
+                NearFocus_MODEL_DOWNLOAD,
+                int8Name(NearFocus_MODEL_ASSET),
+                NearFocus_MODEL_ASSET
         };
     }
 

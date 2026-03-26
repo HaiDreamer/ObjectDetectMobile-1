@@ -35,24 +35,24 @@ public class ModelUtils {
     public static List<ModelInfo> getAvailableModels() {
         List<ModelInfo> list = new ArrayList<>();
         
-        // Model 1: Indoor Depth
+        // Model 1: NearFocus Depth
         list.add(new ModelInfo(
-                "depth_indoor",
-                "Indoor Depth Model",
+                "depth_NearFocus",
+                "NearFocus Depth Model",
                 "Depth Anything V2 (Metric Hypersim) - FP16",
                 "depth_anything_v2_metric_hypersim_vits_fp16.onnx",
                 "https://haidreamer.github.io/models_mobile_app_gp_for_visually_impaired/depth_anything_v2_metric_hypersim_vits_fp16.onnx",
-                EnvMode.INDOOR
+                EnvMode.NearFocus
         ));
 
-        // Model 2: Outdoor Depth
+        // Model 2: FarFocus Depth
         list.add(new ModelInfo(
-                "depth_outdoor",
-                "Outdoor Depth Model",
+                "depth_FarFocus",
+                "FarFocus Depth Model",
                 "Depth Anything V2 (Metric VKitti) - FP16",
                 "depth_anything_v2_metric_vkitti_vits_fp16.onnx",
                 "https://haidreamer.github.io/models_mobile_app_gp_for_visually_impaired/depth_anything_v2_metric_vkitti_vits_fp16.onnx",
-                EnvMode.OUTDOOR
+                EnvMode.FarFocus
         ));
 
         // Ví dụ Model 3: Object Detection (Placeholder cho tương lai)

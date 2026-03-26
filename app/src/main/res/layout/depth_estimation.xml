@@ -128,15 +128,15 @@
                 android:layout_marginTop="30dp">
 
                 <TextView
-                    android:layout_width="80dp"
+                    android:layout_width="120dp"
                     android:layout_height="wrap_content"
-                    android:text="Indoor"
+                    android:text="NearFocus"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:gravity="start"/>
 
                 <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/switchIndoor"
+                    android:id="@+id/switchNearFocus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:thumbTint="@color/switch_thumb2"
@@ -150,15 +150,15 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="80dp"
+                    android:layout_width="120dp"
                     android:layout_height="wrap_content"
-                    android:text="Outdoor"
+                    android:text="FarFocus"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:gravity="start"/>
 
                 <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/switchOutdoor"
+                    android:id="@+id/switchFarFocus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:thumbTint="@color/switch_thumb2"
@@ -188,7 +188,7 @@
                     android:id="@+id/statusModeMono"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text=" Monocular . Indoor"
+                    android:text=" Monocular . NearFocus"
                     android:textSize="18sp"
                     android:textColor="@android:color/black"
                     android:textStyle="bold"/>

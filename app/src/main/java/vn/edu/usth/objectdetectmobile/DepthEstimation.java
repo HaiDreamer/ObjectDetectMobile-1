@@ -19,7 +19,7 @@ import com.google.android.material.button.MaterialButtonToggleGroup;
 public class DepthEstimation extends AppCompatActivity {
 
     private LinearLayout layoutMonocular, layoutStereo;
-    private SwitchCompat switchIndoor, switchOutdoor;
+    private SwitchCompat switchNearFocus, switchFarFocus;
     private TextView statusModeMono, statusModeStereo;
     
     private SharedPreferences prefs;
@@ -39,8 +39,8 @@ public class DepthEstimation extends AppCompatActivity {
 
         layoutMonocular = findViewById(R.id.layoutMonocular);
         layoutStereo = findViewById(R.id.layoutStereo);
-        switchIndoor = findViewById(R.id.switchIndoor);
-        switchOutdoor = findViewById(R.id.switchOutdoor);
+        switchNearFocus = findViewById(R.id.switchNearFocus);
+        switchFarFocus = findViewById(R.id.switchFarFocus);
         statusModeMono = findViewById(R.id.statusModeMono);
         statusModeStereo = findViewById(R.id.statusModeStereo);
 
@@ -92,9 +92,9 @@ public class DepthEstimation extends AppCompatActivity {
                     layoutStereo.setVisibility(View.VISIBLE);
                     layoutMonocular.setVisibility(View.GONE);
 
-                    // Reset Indoor/Outdoor when change to Stereo
-                    switchIndoor.setChecked(false);
-                    switchOutdoor.setChecked(false);
+                    // Reset NearFocus/FarFocus when change to Stereo
+                    switchNearFocus.setChecked(false);
+                    switchFarFocus.setChecked(false);
 
                     // update status Stereo
                     updateStatusStereo();
@@ -105,32 +105,32 @@ public class DepthEstimation extends AppCompatActivity {
             }
         });
 
-        // Indoor/Outdoor events
-        switchIndoor.setOnCheckedChangeListener((buttonView, isChecked) -> {
+        // NearFocus/FarFocus events
+        switchNearFocus.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                // if Indoor open, turn off Outdoor
-                switchOutdoor.setChecked(false);
+                // if NearFocus open, turn off FarFocus
+                switchFarFocus.setChecked(false);
             }
-            // safe Prefs (if open -> INDOOR, if turn off Outdoor also turn off -> default INDOOR)
-            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "INDOOR").apply();
+            // safe Prefs (if open -> NearFocus, if turn off FarFocus also turn off -> default NearFocus)
+            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "NearFocus").apply();
             updateStatusMonocular();
         });
 
-        switchOutdoor.setOnCheckedChangeListener((buttonView, isChecked) -> {
+        switchFarFocus.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                // if Outdoor open, turn off Indoor
-                switchIndoor.setChecked(false);
+                // if FarFocus open, turn off NearFocus
+                switchNearFocus.setChecked(false);
             }
             // safe Prefs
-            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "OUTDOOR").apply();
+            if (isChecked) prefs.edit().putString(PREF_ENV_MODE, "FarFocus").apply();
             updateStatusMonocular();
         });
 
         // Custom color for switch
-        switchIndoor.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
-        switchIndoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
-        switchOutdoor.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
-        switchOutdoor.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
+        switchNearFocus.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
+        switchNearFocus.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
+        switchFarFocus.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb2));
+        switchFarFocus.setTrackTintList(ContextCompat.getColorStateList(this, R.color.switch_track2));
 
         // --- SETUP UI STATE FROM PREFS ---
         // Call this function after setting the listener so that the UI logic in the listener is activated
@@ -146,24 +146,24 @@ public class DepthEstimation extends AppCompatActivity {
             group.check(R.id.buttonMonocular);
         }
         
-        // 2. Load Env Mode (Indoor/Outdoor)
-        String envMode = prefs.getString(PREF_ENV_MODE, "OUTDOOR");
-        if ("OUTDOOR".equals(envMode)) {
-            switchOutdoor.setChecked(true);
-            switchIndoor.setChecked(false);
+        // 2. Load Env Mode (NearFocus/FarFocus)
+        String envMode = prefs.getString(PREF_ENV_MODE, "FarFocus");
+        if ("FarFocus".equals(envMode)) {
+            switchFarFocus.setChecked(true);
+            switchNearFocus.setChecked(false);
         } else {
-            switchIndoor.setChecked(true);
-            switchOutdoor.setChecked(false);
+            switchNearFocus.setChecked(true);
+            switchFarFocus.setChecked(false);
         }
     }
 
     // update status for Monocular
     private void updateStatusMonocular() {
         StringBuilder mode = new StringBuilder(" Monocular");
-        if (switchIndoor.isChecked()) {
-            mode.append(" . Indoor");
-        } else if (switchOutdoor.isChecked()) {
-            mode.append(" . Outdoor");
+        if (switchNearFocus.isChecked()) {
+            mode.append(" . NearFocus");
+        } else if (switchFarFocus.isChecked()) {
+            mode.append(" . FarFocus");
         }
         statusModeMono.setText(mode.toString());
     }
