@@ -69,6 +69,7 @@ import android.content.Context;
 public class MainActivity extends ComponentActivity {
     // ---- Latency logging ----
     private static final int LAT_LOG_EVERY_N_FRAMES = 15;
+    private static final int SEG_INPUT_SIZE = 384;
     private int latFrameCounter = 0;
     private boolean cameraTsIsRealtime = false;
     private long realtimeMinusUptimeOffsetNs = 0;
@@ -101,8 +102,6 @@ public class MainActivity extends ComponentActivity {
     private static final short DEPTH_INTERVAL_MS = 0;
     private static final short DEPTH_CACHE_MS = 3000;
 
-    // simulation
-    private static final long SIM_INTERVAL_MS = 3500;
     private long lastProcessedStartMs = 0;
 
     // Input blur
@@ -449,6 +448,19 @@ public class MainActivity extends ComponentActivity {
         reloadPipelinesForEnvChange();
     }
 
+    private static int[] resizeNearest(int[] src, int srcW, int srcH, int dstW, int dstH) {
+        int[] dst = new int[dstW * dstH];
+        float sx = dstW / (float) srcW;
+        float sy = dstH / (float) srcH;
+        for (int y = 0; y < dstH; y++) {
+            int py = Math.min((int)(y / sy), srcH - 1);
+            for (int x = 0; x < dstW; x++) {
+                int px = Math.min((int)(x / sx), srcW - 1);
+                dst[y * dstW + x] = src[py * srcW + px];
+            }
+        }
+        return dst;
+    }
 
     private void reloadPipelinesForEnvChange() {
         // Pause realtime so we don't process frames while reloading depth
@@ -677,19 +689,9 @@ public class MainActivity extends ComponentActivity {
                     .build();
             preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
+            // AFTER — let camera deliver native resolution; each model resizes internally
             ImageAnalysis analysis = new ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setResolutionSelector(
-                            new ResolutionSelector.Builder()
-                                    .setResolutionStrategy(
-                                            new ResolutionStrategy(
-                                                    new Size(ANALYSIS_INPUT_SIZE, ANALYSIS_INPUT_SIZE),
-                                                    ResolutionStrategy
-                                                            .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                                            )
-                                    )
-                                    .build()
-                    )
                     .build();
 
             analysis.setAnalyzer(exec, this::analyzeFrame);
@@ -781,16 +783,6 @@ public class MainActivity extends ComponentActivity {
 
             if (!shouldProcess) return;
 
-            // ---- THROTTLE simulation: only process one frame per 3.5s (for realtime stream) ----
-            if (realtimeEnabled && !singleShotFrame) {
-                long nowMs = SystemClock.elapsedRealtime();
-                if (nowMs - lastProcessedStartMs < SIM_INTERVAL_MS) {
-                    return; // will still close() in finally
-                }
-                lastProcessedStartMs = nowMs;
-            }
-            // -----------------------------------------------------------------------
-
             // ---- Capture timestamp (convert to nanoTime base) ----
             long imgTsNs = image.getImageInfo().getTimestamp();   // camera timestamp
             long imgTsUptimeNs = cameraTsIsRealtime
@@ -826,6 +818,9 @@ public class MainActivity extends ComponentActivity {
                     ? ImageUtils.blurAtSize(argb, frameW, frameH, BLUR_INPUT_SIZE, BLUR_RADIUS)
                     : argb;
 
+            // Segmentor gets a cheaper 384×384 pre-resize; its internal letterbox then runs on this
+            int[] segInput = ImageUtils.resizeNearest(argb, frameW, frameH, SEG_INPUT_SIZE, SEG_INPUT_SIZE);
+
             // Run YOLO + depth in parallel on inferenceExec
             int finalFrameW1 = frameW;
             int finalFrameH1 = frameH;
@@ -845,10 +840,11 @@ public class MainActivity extends ComponentActivity {
                     }
                 });
             }
+            // effectively final for lambda
             if (detectorSeg != null) {
                 detFutureSeg = inferenceExec.submit(() -> {
                     try {
-                        return detectorSeg.detect(detectorInput, finalFrameW1, finalFrameH1);
+                        return detectorSeg.detect(segInput, SEG_INPUT_SIZE, SEG_INPUT_SIZE);
                     } catch (OrtException e) {
                         Log.e(TAG, "Seg detect failed", e);
                         return null;

@@ -115,8 +115,17 @@ public class ModelPackage extends AppCompatActivity {
             }
         } else {
             // Slot trống
-            tv.setVisibility(View.INVISIBLE);
-            btn.setVisibility(View.INVISIBLE);
+            if (tv.getId() == R.id.textModel2) {
+                tv.setText("YOLOv8 Segmentation");
+                tv.setVisibility(View.VISIBLE);
+                btn.setVisibility(View.VISIBLE);
+                btn.setOnClickListener(v ->
+                        Toast.makeText(this, "No model to delete", Toast.LENGTH_SHORT).show()
+                );
+            } else {
+                tv.setVisibility(View.INVISIBLE);
+                btn.setVisibility(View.INVISIBLE);
+            }
             btn.setOnClickListener(null);
         }
     }

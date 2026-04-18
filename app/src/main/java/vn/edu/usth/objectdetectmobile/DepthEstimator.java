@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 
 import vn.edu.usth.objectdetectmobile.MainActivity.EnvMode;
+import vn.edu.usth.objectdetectmobile.utils.ImageUtils;
 
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OnnxValue;
@@ -314,17 +315,7 @@ public class DepthEstimator implements AutoCloseable {
     }
 
     private static int[] resizeNearest(int[] src, int srcW, int srcH, int dstW, int dstH) {
-        int[] dst = new int[dstW*dstH];
-        float sx = dstW / (float)srcW;
-        float sy = dstH / (float)srcH;
-        for (int y=0;y<dstH;y++){
-            int py = Math.min((int)(y / sy), srcH-1);
-            for (int x=0;x<dstW;x++){
-                int px = Math.min((int)(x / sx), srcW-1);
-                dst[y*dstW + x] = src[py*srcW + px];
-            }
-        }
-        return dst;
+        return ImageUtils.resizeNearest(src, srcW, srcH, dstW, dstH);
     }
 
     private static float[] resizeBilinear(float[] src, int srcW, int srcH, int dstW, int dstH) {
