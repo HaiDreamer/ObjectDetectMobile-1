@@ -48,12 +48,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import ai.onnxruntime.OrtException;
-
-
-import android.os.Bundle;
-
 import android.content.Intent;
 import android.net.Uri;
 import androidx.appcompat.app.AlertDialog;
@@ -73,6 +70,7 @@ public class MainActivity extends ComponentActivity {
     private int latFrameCounter = 0;
     private boolean cameraTsIsRealtime = false;
     private long realtimeMinusUptimeOffsetNs = 0;
+    
     // ---------------------------------------------------------------------------------------------
     //  Environment mode (NearFocus / FarFocus)
     // ---------------------------------------------------------------------------------------------
@@ -80,6 +78,7 @@ public class MainActivity extends ComponentActivity {
         NearFocus,
         FarFocus
     }
+
     // Depth model prefs live in a separate file
     private static final String DEPTH_MODEL_PREFS = "depth_models";
     private SharedPreferences depthModelPrefs;
@@ -126,14 +125,13 @@ public class MainActivity extends ComponentActivity {
     private TextView depthModeText;
     private SeekBar calibrationSeek;
     private TextView calibrationValue;
-    private SeekBar zoomSeek;
-    private TextView zoomValue;
+
     // ---------------------------------------------------------------------------------------------
     //  Core components
     // ---------------------------------------------------------------------------------------------
     private ObjectDetector detectorOd;
     private ObjectDetector detectorSeg;
-    private volatile DepthEstimator depthEstimator;     //Marking the field volatile guarantees visibility of the latest reference across threads
+    private volatile DepthEstimator depthEstimator;     // volatile guarantees cross-thread visibility
     private StereoDepthProcessor stereoProcessor;
     private ProcessCameraProvider cameraProvider;
     private Camera currentCamera;
@@ -146,9 +144,7 @@ public class MainActivity extends ComponentActivity {
     // ---------------------------------------------------------------------------------------------
     //  Depth & stereo state
     // ---------------------------------------------------------------------------------------------
-    // Reuse your existing helper state holder
-    final DepthPipelineHelper.DepthState depthState =
-            new DepthPipelineHelper.DepthState();
+    final DepthPipelineHelper.DepthState depthState = new DepthPipelineHelper.DepthState();
     // Prevent overlapping depth runs when we make depth async.
     private final AtomicBoolean depthBusy = new AtomicBoolean(false);
 
@@ -177,8 +173,6 @@ public class MainActivity extends ComponentActivity {
     //  Zoom & camera facing
     // ---------------------------------------------------------------------------------------------
     private volatile int lensFacing = CameraSelector.LENS_FACING_BACK;
-    private volatile float zoomMinRatio = 1f;
-    private volatile float zoomMaxRatio = 1f;
     private boolean stereoSwitchInternalChange = false;
     private boolean envSwitchInternalChange = false;
 
@@ -294,7 +288,7 @@ public class MainActivity extends ComponentActivity {
             boolean isStereo = "STEREO".equals(mode);
             // Chỉ cho phép bật stereo nếu phần cứng hỗ trợ
             if (isStereo && !stereoPipelineAvailable) {
-                isStereo = false; // Fallback
+                isStereo = false;
             }
             stereoFusionEnabled = isStereo;
             runOnUiThread(() -> {
@@ -337,8 +331,7 @@ public class MainActivity extends ComponentActivity {
 
         // Calibration
         calibrationPrefKey = DepthCalibrationHelper.buildCalibrationKey(this);
-        calibrationScale = 1f;
-        DepthCalibrationHelper.saveCalibration(prefs, calibrationPrefKey, calibrationScale);
+        calibrationScale = DepthCalibrationHelper.loadSavedCalibrationScale(prefs, calibrationPrefKey, 1f);
         DepthEstimator.setUserScale(calibrationScale);
 
         // Environment mode (load from prefs, default = FarFocus)
@@ -359,7 +352,6 @@ public class MainActivity extends ComponentActivity {
         depthAsyncEnabled = prefs.getBoolean(PREF_DEPTH_ASYNC, DEFAULT_DEPTH_ASYNC);
     }
 
-
     private void initControls() {
         initRealtimeSwitch();
         initDetectOnceButton();
@@ -370,14 +362,12 @@ public class MainActivity extends ComponentActivity {
         initSettingsButton();
         setupCalibrationControls();
         updateDepthModeLabel();
-        setupZoomControls();
     }
 
     private void initSettingsButton() {
         if (settingsButton == null) return;
         settingsButton.setOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, Settings.class);
-            // Truyền khả năng hỗ trợ Stereo sang Settings để Settings truyền tiếp cho DepthEstimation
             intent.putExtra("STEREO_AVAILABLE", stereoPipelineAvailable);
             startActivity(intent);
         });
@@ -434,32 +424,15 @@ public class MainActivity extends ComponentActivity {
 
     private void switchEnvironment(EnvMode newMode) {
         envMode = newMode;
-
         // Lưu vào prefs
         prefs.edit().putString(PREF_ENV_MODE, envMode.name()).apply();
-
         Toast.makeText(
                 this,
                 "Environment: " + (envMode == EnvMode.FarFocus ? "FarFocus" : "NearFocus"),
                 Toast.LENGTH_SHORT
         ).show();
-
         // Reload lại detector/depth cho mode mới
         reloadPipelinesForEnvChange();
-    }
-
-    private static int[] resizeNearest(int[] src, int srcW, int srcH, int dstW, int dstH) {
-        int[] dst = new int[dstW * dstH];
-        float sx = dstW / (float) srcW;
-        float sy = dstH / (float) srcH;
-        for (int y = 0; y < dstH; y++) {
-            int py = Math.min((int)(y / sy), srcH - 1);
-            for (int x = 0; x < dstW; x++) {
-                int px = Math.min((int)(x / sx), srcW - 1);
-                dst[y * dstW + x] = src[py * srcW + px];
-            }
-        }
-        return dst;
     }
 
     private void reloadPipelinesForEnvChange() {
@@ -492,20 +465,17 @@ public class MainActivity extends ComponentActivity {
             try {
                 DepthEstimator newDepth = new DepthEstimator(this, envMode);
                 depthEstimator = newDepth;
-
                 synchronized (depthState) {
                     depthState.lastDepthMap = null;
                     depthState.lastDepthMillis = 0L;
                     depthState.lastDepthCacheTime = 0L;
                 }
-
                 Toast.makeText(
                         this,
                         "Depth model loaded for " +
                                 (envMode == EnvMode.FarFocus ? "FarFocus" : "NearFocus"),
                         Toast.LENGTH_SHORT
                 ).show();
-
             } catch (Throwable e) {
                 Log.w(TAG, "Depth estimator re-init failed", e);
                 depthEstimator = null;
@@ -527,8 +497,6 @@ public class MainActivity extends ComponentActivity {
         });
     }
 
-
-
     private void initQuickSettingsButton() {
         if (quickSettingsButton == null) {
             applySettingsVisibility(true);
@@ -543,7 +511,6 @@ public class MainActivity extends ComponentActivity {
                 && controlPanel.getVisibility() != View.VISIBLE;
         applySettingsVisibility(visible);
     }
-
 
     private void applySettingsVisibility(boolean visible) {
         if (controlPanel != null) {
@@ -582,7 +549,7 @@ public class MainActivity extends ComponentActivity {
                 Log.w(TAG, "OD detector init failed (best.onnx), trying fallback 2", secondErr);
                 try {
                     detectorOd = new ObjectDetector(this, "yolov8m_compatible.onnx",
-                        ObjectDetector.Detection.SOURCE_OD);
+                            ObjectDetector.Detection.SOURCE_OD);
                 } catch (Throwable fallbackErr) {
                     detectorOd = null;
                     Log.e(TAG, "OD detector init failed (fallback)", fallbackErr);
@@ -607,7 +574,7 @@ public class MainActivity extends ComponentActivity {
             return;
         }
 
-        // --- NEW: kiểm tra depth model có trong assets hay chưa ---
+        // kiểm tra depth model có trong assets hay chưa
         boolean depthModelOk = DepthEstimator.isModelAvailable(this, envMode);
         if (!depthModelOk) {
             // Không có model -> thông báo & gợi ý mở link download
@@ -640,7 +607,6 @@ public class MainActivity extends ComponentActivity {
 
     private void showMissingDepthModelDialog(EnvMode targetMode) {
         String modeLabel = (targetMode == EnvMode.FarFocus) ? "FarFocus" : "NearFocus";
-
         new AlertDialog.Builder(this)
                 .setTitle("Depth model missing")
                 .setMessage(
@@ -651,7 +617,6 @@ public class MainActivity extends ComponentActivity {
                 .setCancelable(true)
                 .show();
     }
-
 
     private void initCameraProvider() {
         ProcessCameraProvider.getInstance(this).addListener(() -> {
@@ -702,8 +667,6 @@ public class MainActivity extends ComponentActivity {
             Camera camera = cameraProvider.bindToLifecycle(
                     (LifecycleOwner) this, selector, preview, analysis);
             currentCamera = camera;
-
-            observeZoom(camera);
             setupStereoProcessorForCurrentCamera(camera);
 
         } catch (Throwable e) {
@@ -763,6 +726,8 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void analyzeFrame(ImageProxy image) {
+        // singleShotFrame is captured before any early-return so the
+        // finally block always sees the correct value.
         boolean singleShotFrame = false;
 
         try {
@@ -775,6 +740,7 @@ public class MainActivity extends ComponentActivity {
                 shouldProcess = true;
 
                 if (stereoFusionEnabled && !stereoPipelineAvailable) {
+                    // Sequential stereo path handles its own cleanup
                     singleShotFrame = false;
                     handleSequentialDualShot();
                     return;
@@ -783,18 +749,18 @@ public class MainActivity extends ComponentActivity {
 
             if (!shouldProcess) return;
 
-            // ---- Capture timestamp (convert to nanoTime base) ----
-            long imgTsNs = image.getImageInfo().getTimestamp();   // camera timestamp
+            // Capture timestamp (convert to nanoTime base)
+            long imgTsNs = image.getImageInfo().getTimestamp();     // camera time stamp
             long imgTsUptimeNs = cameraTsIsRealtime
                     ? (imgTsNs - realtimeMinusUptimeOffsetNs)
                     : imgTsNs;
 
-            // Start of YOUR processing for this frame
+            // Start of processing for this frame
             long analyzerStartNs = System.nanoTime();
             long captureToAnalyzerNs = analyzerStartNs - imgTsUptimeNs;
             // -----------------------------------------------------
 
-            // Basic frame info
+            // frame info
             int frameW = image.getWidth();
             int frameH = image.getHeight();
             int rotation = image.getImageInfo().getRotationDegrees();
@@ -976,7 +942,7 @@ public class MainActivity extends ComponentActivity {
             CameraCharacteristics cc =
                     Camera2CameraInfo.extractCameraCharacteristics(camera.getCameraInfo());
 
-            // ---- REQUIRED for correct capture timestamp conversion ----
+            // need for correct capture timestamp conversion
             Integer src = cc.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE);
             cameraTsIsRealtime = (src != null
                     && src == CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME);
@@ -984,7 +950,6 @@ public class MainActivity extends ComponentActivity {
             // Convert REALTIME (elapsedRealtimeNanos) -> nanoTime base
             realtimeMinusUptimeOffsetNs =
                     SystemClock.elapsedRealtimeNanos() - System.nanoTime();
-            // ----------------------------------------------------------
 
             boolean isLogicalMultiCamera = false;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -1007,7 +972,6 @@ public class MainActivity extends ComponentActivity {
             updateStereoSwitchAvailability(false);
         }
     }
-
 
     // ---------------------------------------------------------------------------------------------
     //  Stereo single-shot pipeline
@@ -1126,7 +1090,6 @@ public class MainActivity extends ComponentActivity {
             } else {
                 stereoSwitch.setText(R.string.stereo_toggle);
                 stereoSwitch.setEnabled(true);
-                
                 // Đồng bộ trạng thái từ Prefs khi Stereo khả dụng (để khi mở app nó nhớ trạng thái cũ)
                 String savedMode = prefs.getString(PREF_DEPTH_MODE, "MONO");
                 stereoFusionEnabled = "STEREO".equals(savedMode);
@@ -1134,53 +1097,6 @@ public class MainActivity extends ComponentActivity {
             }
             stereoSwitchInternalChange = false;
             updateDepthModeLabel();
-        });
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    //  Zoom & camera utils
-    // ---------------------------------------------------------------------------------------------
-    private void setupZoomControls() {
-        if (zoomSeek == null || zoomValue == null) return;
-        zoomSeek.setThumbTintList(ContextCompat.getColorStateList(this, R.color.switch_thumb1));
-        zoomSeek.setProgressTintList(ContextCompat.getColorStateList(this, R.color.switch_track1));
-        ZoomHelper.setupZoomSeekBar(
-                zoomSeek,
-                zoomValue,
-                new ZoomHelper.ZoomControl() {
-                    @Override
-                    public float getMinZoomRatio() {
-                        return zoomMinRatio;
-                    }
-
-                    @Override
-                    public float getMaxZoomRatio() {
-                        return zoomMaxRatio;
-                    }
-
-                    @Override
-                    public void setZoomRatio(float ratio) {
-                        if (currentCamera != null) {
-                            currentCamera.getCameraControl().setZoomRatio(ratio);
-                        }
-                    }
-                }
-        );
-    }
-
-    private void observeZoom(Camera camera) {
-        if (zoomSeek == null || zoomValue == null) return;
-        camera.getCameraInfo().getZoomState().observe(this, state -> {
-            if (state == null) return;
-            zoomMinRatio = state.getMinZoomRatio();
-            zoomMaxRatio = state.getMaxZoomRatio();
-            int progress = ZoomHelper.zoomRatioToProgress(
-                    state.getZoomRatio(),
-                    zoomMinRatio,
-                    zoomMaxRatio
-            );
-            zoomSeek.setProgress(progress);
-            zoomValue.setText(getString(R.string.zoom_value, state.getZoomRatio()));
         });
     }
 
@@ -1193,7 +1109,6 @@ public class MainActivity extends ComponentActivity {
         updateDepthModeLabel();
     }
 
-    //process TTS warning
     private void processTTSWarning(
             java.util.List<ObjectDetector.Detection> results,
             int frameW,
@@ -1214,7 +1129,7 @@ public class MainActivity extends ComponentActivity {
             if (det.source != ObjectDetector.Detection.SOURCE_OD) continue;
             if (Float.isNaN(det.depth) || det.depth <= 0) continue;
 
-            // Your pipeline: det.depth printed as "cm" in OverlayView -> convert to meters
+            // pipeline: det.depth printed as "cm" in OverlayView -> convert to meters
             float distanceMeters = det.depth / 100.0f;
 
             String label = (det.cls >= 0 && det.cls < cachedLabels.size())
@@ -1222,7 +1137,6 @@ public class MainActivity extends ComponentActivity {
                     : "object";
 
             float xCenter = (det.x1 + det.x2) * 0.5f;
-
             float xCenterNorm = clamp01(xCenter * invW);
 
             ttsDetections.add(new vn.edu.usth.objectdetectmobile.utils.TTSWarning.Detection(
@@ -1232,7 +1146,7 @@ public class MainActivity extends ComponentActivity {
 
         if (ttsDetections.isEmpty()) return;
 
-        // latency log (unchanged)
+        // latency log
         long ttsBeginNs = System.nanoTime();
         long captureToTtsBeginNs = ttsBeginNs - imgTsUptimeNs;
         android.util.Log.i("LAT", String.format(
